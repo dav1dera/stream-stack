@@ -21,7 +21,8 @@ $Py = ".\.venv-build\Scripts\python.exe"
     --collect-all customtkinter `
     --hidden-import app `
     --hidden-import remote `
-    launcher.py
+    --hidden-import launcher `
+    demo_launcher.py
 
 Write-Host ""
 Write-Host "Build completata: $PSScriptRoot\dist\StreamStackSetupWizard.exe" -ForegroundColor Green
