@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset="1" stop-color="#0e1930"/></linearGradient>
+  <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c5cff"/><stop offset="1" stop-color="#4d7cff"/></linearGradient>
+</defs>
+<rect width="1200" height="760" rx="16" fill="url(#bg)"/>
+<rect x="12" y="12" width="255" height="736" rx="12" fill="#0d1929" stroke="#24344c"/>
+<rect x="280" y="12" width="908" height="736" rx="12" fill="#0b1524" stroke="#24344c"/>
+<g font-family="Segoe UI,Arial,sans-serif" fill="#eef4ff">
+<text x="32" y="52" font-size="22" font-weight="700">◆ Stream Stack</text><text x="54" y="76" font-size="13" fill="#a99bff">Setup Wizard</text>
+<text x="32" y="118" font-size="11" fill="#9aacbf" font-weight="700">PROGRESSO</text><rect x="32" y="132" width="202" height="7" rx="4" fill="#26364b"/><rect x="32" y="132" width="35" height="7" rx="4" fill="url(#accent)"/>
+<text x="32" y="162" font-size="12" fill="#9aacbf">1 / 10</text>
+</g>
+<g font-family="Segoe UI,Arial,sans-serif" font-size="13">
+<rect x="24" y="195" width="218" height="38" rx="7" fill="#2b285f"/><text x="42" y="219" fill="#fff" font-weight="700">1   Benvenuto</text>
+<text x="42" y="266" fill="#adbed4">2   Server SSH</text><text x="42" y="310" fill="#adbed4">3   Rete &amp; Domini</text><text x="42" y="354" fill="#adbed4">4   VPN &amp; Proxy</text><text x="42" y="398" fill="#adbed4">5   API &amp; Servizi</text><text x="42" y="442" fill="#adbed4">6   OAuth &amp; Login</text><text x="42" y="486" fill="#adbed4">7   Opzionali</text><text x="42" y="530" fill="#adbed4">8   Riepilogo</text><text x="42" y="574" fill="#adbed4">9   Installazione</text><text x="42" y="618" fill="#adbed4">10  Completato</text>
+</g>
+<g font-family="Segoe UI,Arial,sans-serif">
+<text x="315" y="76" fill="#eef4ff" font-size="34" font-weight="700">Configura tutto dal PC Windows</text>
+<text x="315" y="108" fill="#9fb1c7" font-size="15">Il server Ubuntu resta completamente headless e viene gestito in sicurezza via SSH.</text>
+<g>
+<rect x="315" y="155" width="260" height="175" rx="10" fill="#111d2d" stroke="#293a52"/><circle cx="355" cy="198" r="22" fill="#2c285f"/><text x="347" y="205" fill="#a993ff" font-size="20">›_</text><text x="392" y="194" fill="#eef4ff" font-size="18" font-weight="700">Gestione via SSH</text><text x="392" y="220" fill="#9fb1c7" font-size="13">Connessione, upload dei file e</text><text x="392" y="241" fill="#9fb1c7" font-size="13">comandi eseguiti sul server.</text>
+</g>
+<g>
+<rect x="590" y="155" width="260" height="175" rx="10" fill="#111d2d" stroke="#293a52"/><circle cx="630" cy="198" r="22" fill="#2c285f"/><text x="620" y="205" fill="#a993ff" font-size="22">◎</text><text x="667" y="194" fill="#eef4ff" font-size="18" font-weight="700">Rete &amp; Domini</text><text x="667" y="220" fill="#9fb1c7" font-size="13">IP, subnet e nomi pubblici</text><text x="667" y="241" fill="#9fb1c7" font-size="13">personalizzabili per servizio.</text>
+</g>
+<g>
+<rect x="865" y="155" width="290" height="175" rx="10" fill="#111d2d" stroke="#293a52"/><circle cx="905" cy="198" r="22" fill="#2c285f"/><text x="896" y="205" fill="#a993ff" font-size="22">✓</text><text x="942" y="194" fill="#eef4ff" font-size="18" font-weight="700">Setup riproducibile</text><text x="942" y="220" fill="#9fb1c7" font-size="13">Secret generati, NPM configurato</text><text x="942" y="241" fill="#9fb1c7" font-size="13">e servizi verificati a fine setup.</text>
+</g>
+<rect x="315" y="350" width="840" height="170" rx="10" fill="#111d2d" stroke="#293a52"/><text x="340" y="385" fill="#a993ff" font-size="13" font-weight="700">COSA FA IL WIZARD</text>
+<text x="340" y="425" fill="#dbe6f5" font-size="14">✓ Test connessione SSH e prerequisiti</text><text x="340" y="458" fill="#dbe6f5" font-size="14">✓ Clone / aggiornamento della repository</text><text x="340" y="491" fill="#dbe6f5" font-size="14">✓ Creazione sicura di setup.env e configurazioni runtime</text>
+<text x="750" y="425" fill="#dbe6f5" font-size="14">✓ Configurazione automatica di Nginx Proxy Manager</text><text x="750" y="458" fill="#dbe6f5" font-size="14">✓ Generazione chiavi Headscale / Jackett</text><text x="750" y="491" fill="#dbe6f5" font-size="14">✓ Avvio e verifica dello stack Docker</text>
+<rect x="315" y="555" width="840" height="78" rx="10" fill="#121f31" stroke="#293a52"/><text x="340" y="584" fill="#a993ff" font-size="13" font-weight="700">PREREQUISITI</text><text x="340" y="611" fill="#aabbd0" font-size="14">Accesso SSH al server Ubuntu, domini e credenziali dei servizi esterni utilizzati.</text>
+<rect x="1035" y="680" width="120" height="42" rx="7" fill="url(#accent)"/><text x="1072" y="707" fill="#fff" font-size="14" font-weight="700">Avanti  ›</text>
+</g>
+</svg>
