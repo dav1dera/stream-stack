@@ -9,11 +9,16 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 NO_NPM=0
+NON_INTERACTIVE=0
 CORE_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --no-npm)
       NO_NPM=1
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=1
+      CORE_ARGS+=("$arg")
       ;;
     *)
       CORE_ARGS+=("$arg")
@@ -21,7 +26,19 @@ for arg in "$@"; do
   esac
 done
 
-# Respect AUTO_CONFIGURE_NPM=false when setup.env already exists.
+# Create the single local configuration file before the core renderer so the
+# interactive hostname step can run before OAuth/service URLs are generated.
+if [[ ! -f "$ROOT/setup.env" ]]; then
+  cp "$ROOT/setup.env.example" "$ROOT/setup.env"
+  chmod 600 "$ROOT/setup.env"
+  echo "created: setup.env (gitignored, mode 600)"
+fi
+
+if (( ! NON_INTERACTIVE )); then
+  python3 "$ROOT/scripts/domain_setup.py"
+fi
+
+# Respect AUTO_CONFIGURE_NPM=false from the one source-of-truth file.
 if [[ -f "$ROOT/setup.env" ]]; then
   npm_flag="$(awk -F= '/^[[:space:]]*AUTO_CONFIGURE_NPM=/{v=$2} END{gsub(/[[:space:]\"'"'"']/,"",v); print tolower(v)}' "$ROOT/setup.env")"
   case "$npm_flag" in
