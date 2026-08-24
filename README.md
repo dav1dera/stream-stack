@@ -1,99 +1,262 @@
-# stream-stack
+# Stream Stack
 
-Sanitized and reproducible version of the reference Docker streaming stack.
+<p align="center">
+  <strong>Stack Docker self-hosted riproducibile per streaming, metadata, proxy, DNS, VPN e gestione remota.</strong>
+</p>
 
-The objective is **not merely to make the containers start**. A fresh Ubuntu host should be able to reach the same architecture and behavior as the reference deployment using the new operator's own domains, accounts, API keys, indexers and provider credentials.
+<p align="center">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
+  <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white">
+  <img alt="Windows Wizard" src="https://img.shields.io/badge/Windows-Setup%20Wizard-6C5CE7?logo=windows11&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/Config-sanitizzata-22C55E">
+</p>
 
-Private databases and identity state are deliberately not published. They are rebuilt locally during first run.
-
-## What this repository reproduces
-
-The repository preserves the 29-service Docker Compose topology, fixed Docker networks, PostgreSQL/PgBouncer/Redis layout, Gluetun + WARP/GOST proxy chain, Headscale/Tailscale/Headplane/OAuth2 architecture, AdGuard -> DNSCrypt path, Nginx Proxy Manager routing, AIOStreams bootstrap/tuning, Comet/CometNet, StremThru, StreamViX, MediaFlow Proxy Light, AIOMetadata, two Seanime instances, Honey, Jackett, Portainer, TeamSpeak, Watchtower and Deunhealth.
-
-It intentionally does **not** publish application databases, NPM/Portainer state, certificates, Headscale/Tailscale/WARP identities, Jackett indexer logins, Seanime libraries, Comet caches, AdGuard runtime state, AIOStreams runtime DB, Usenet credentials or third-party secrets.
-
----
-
-# 1. Prepare the host
-
-Reference target: **Ubuntu Server 24.04 LTS**, Docker Engine and Docker Compose v2.
-
-Prepare:
-
-- a static/DHCP-reserved LAN IP for the Docker host;
-- `/dev/net/tun`;
-- TCP 80/443 forwarded from the router to the Docker host for public HTTPS;
-- TCP/UDP 53 free for AdGuard Home;
-- a public domain, with Cloudflare DNS/DDNS in the reference architecture;
-- free Docker ranges `172.18.0.0/24` and `172.19.0.0/24`.
-
-Check that the Docker networks do not overlap your LAN/VPN:
-
-```bash
-ip route
-ip addr
-```
-
-If they conflict, change the Compose subnets and corresponding fixed IP references **before first start**.
-
-Enable forwarding for the Headscale subnet-router/exit-node role:
-
-```bash
-cat <<'EOF_SYSCTL' | sudo tee /etc/sysctl.d/99-stream-stack.conf
-net.ipv4.ip_forward=1
-net.ipv6.conf.all.forwarding=1
-EOF_SYSCTL
-sudo sysctl --system
-```
-
-## Free DNS port 53
-
-The reference host lets AdGuard own TCP/UDP 53 instead of `systemd-resolved`:
-
-```bash
-sudo systemctl disable --now systemd-resolved
-sudo rm -f /etc/resolv.conf
-printf 'nameserver 1.1.1.1\nnameserver 9.9.9.9\n' | sudo tee /etc/resolv.conf
-sudo chmod 644 /etc/resolv.conf
-sudo ss -lntup | grep ':53 ' || true
-```
-
-The final command should not show another listener on port 53.
+> [!IMPORTANT]
+> Questa repository non serve soltanto ad avviare dei container. L'obiettivo è permettere a una nuova installazione di ricostruire **la stessa architettura e la stessa logica operativa dello stack di riferimento**, usando però domini, account, API key e credenziali appartenenti a chi installa.
 
 ---
 
-# 2. Install Docker
+## Indice
 
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl python3
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+- [Panoramica](#panoramica)
+- [Wizard grafico per Windows](#wizard-grafico-per-windows)
+- [Architettura](#architettura)
+- [Installazione rapida](#installazione-rapida)
+- [Cosa chiede il setup](#cosa-chiede-il-setup)
+- [Domini e Nginx Proxy Manager](#domini-e-nginx-proxy-manager)
+- [AIOStreams](#aiostreams)
+- [Operazioni ancora manuali](#operazioni-ancora-manuali)
+- [Verifica finale](#verifica-finale)
+- [Sicurezza](#sicurezza)
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo \"${UBUNTU_CODENAME:-$VERSION_CODENAME}\") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+---
 
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo usermod -aG docker "$USER"
+# Panoramica
+
+La repo conserva la topologia del deployment originale ma **non pubblica stato runtime o dati sensibili**.
+
+### Servizi inclusi
+
+| Area | Servizi principali |
+|---|---|
+| Streaming | AIOStreams, Comet, CometNet, StremThru, StreamViX, MediaFlow Proxy Light |
+| Anime | Seanime principale + Seanime condiviso |
+| Metadata | AIOMetadata |
+| Indexing | Jackett |
+| Database | PostgreSQL, PgBouncer, Redis |
+| VPN / Proxy | Gluetun, MicroWARP, GOST |
+| DNS | AdGuard Home, DNSCrypt Proxy, Cloudflare DDNS |
+| Accesso remoto | Headscale, Tailscale, Headplane, OAuth2 Proxy |
+| Reverse proxy | Nginx Proxy Manager |
+| Gestione | Portainer, Honey, Watchtower, Deunhealth |
+| Extra | TeamSpeak |
+
+In totale lo stack mantiene la struttura a **29 servizi** del deployment di riferimento.
+
+### Cosa non viene pubblicato
+
+- database applicativi;
+- password, API key e token;
+- certificati Let's Encrypt;
+- identità Headscale / Tailscale / WARP;
+- configurazioni private degli indexer;
+- librerie e stato Seanime;
+- database AIOStreams;
+- cache e file runtime;
+- credenziali Usenet o provider.
+
+Questi elementi vengono rigenerati o reinseriti durante il setup.
+
+---
+
+# Wizard grafico per Windows
+
+Per chi non vuole lavorare file per file sul server è disponibile un **wizard grafico Windows**.
+
+Il server Ubuntu può restare completamente **headless / CLI**: la GUI gira sul PC Windows e si collega via **SSH/SFTP**.
+
+<p align="center">
+  <img src="assets/screenshots/wizard-home.svg" alt="Schermata iniziale Stream Stack Setup Wizard" width="100%">
+</p>
+
+Il wizard guida attraverso:
+
+1. connessione SSH al server;
+2. rete locale e subnet;
+3. dominio base e hostname pubblici;
+4. WireGuard / Gluetun;
+5. Cloudflare, TMDB, TVDB e TorBox;
+6. OAuth2, NPM e login applicativi;
+7. integrazioni opzionali;
+8. riepilogo e validazione;
+9. installazione remota con log in tempo reale;
+10. stato finale e credenziali generate.
+
+## Rete e domini
+
+Gli hostname non sono hardcoded. È possibile usare i nomi standard derivati dal dominio base oppure scegliere un FQDN diverso per ogni servizio.
+
+<p align="center">
+  <img src="assets/screenshots/wizard-network.svg" alt="Configurazione rete e domini del wizard" width="100%">
+</p>
+
+Esempio con nomi standard:
+
+```text
+aiostreams.example.com
+aiometadata.example.com
+mfp.example.com
+headscale.example.com
+seanime.example.com
+shared-seanime.example.com
+cometnet.example.com
+stremthru.example.com
+streamv.example.com
+portainer.example.com
 ```
 
-Log out/in or reboot, then verify:
+Ma è perfettamente valido usare, per esempio:
 
-```bash
-docker version
-docker compose version
-docker run --rm hello-world
+```text
+streams.miodominio.it
+anime.casa.net
+vpn.altrodominio.org
+proxy.example.com
+```
+
+La logica interna dello stack resta invariata.
+
+## Schermata finale
+
+Al termine il wizard mostra log, stato dei servizi e le credenziali generate automaticamente.
+
+<p align="center">
+  <img src="assets/screenshots/wizard-complete.svg" alt="Installazione Stream Stack completata" width="100%">
+</p>
+
+> [!NOTE]
+> Le immagini sopra sono anteprime dell'interfaccia del wizard; la GUI effettiva è implementata in `windows-wizard/`.
+
+## Avvio del wizard su Windows
+
+Dopo aver clonato la repo:
+
+```powershell
+git clone https://github.com/dav1dera/stream-stack.git
+cd stream-stack\windows-wizard
+```
+
+Il metodo più semplice è fare doppio click su:
+
+```text
+Start-Wizard.cmd
+```
+
+oppure da PowerShell:
+
+```powershell
+.\run.ps1
+```
+
+È presente anche uno script PyInstaller per generare un eseguibile standalone:
+
+```powershell
+.\build.ps1
+```
+
+Output previsto:
+
+```text
+windows-wizard\dist\StreamStackSetupWizard.exe
 ```
 
 ---
 
-# 3. Configure the whole repository once
+# Architettura
 
-The normal installation path does **not** require editing service files one by one.
+Schema logico semplificato:
+
+```text
+                        Internet
+                           │
+                    Cloudflare DNS
+                           │
+                     TCP 80 / 443
+                           │
+                Nginx Proxy Manager
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   AIOStreams          Headscale           Seanime
+        │                  │                  │
+        │             /admin → OAuth2         │
+        │                  │                  │
+        │              Headplane              │
+        │                                     │
+        ├────────── MediaFlow / Comet ─────────┤
+        │
+        └──── servizi attraverso Gluetun ──────┐
+                                              │
+                                    Mullvad / WireGuard
+                                              │
+                                       WARP / GOST
+```
+
+DNS locale:
+
+```text
+Client LAN
+   │
+AdGuard Home :53
+   │
+DNSCrypt Proxy :5353
+   │
+resolver upstream
+```
+
+Database:
+
+```text
+PostgreSQL
+   │
+PgBouncer :6432
+   ├── Comet
+   ├── CometNet
+   └── StremThru
+
+Redis
+   ├── AIOStreams / servizi collegati
+   └── AIOMetadata / cache
+```
+
+---
+
+# Installazione rapida
+
+## Metodo 1 — Wizard Windows
+
+È il metodo consigliato se il server è headless.
+
+```text
+Windows GUI → SSH → Ubuntu Server → setup.sh → Docker Compose
+```
+
+Il wizard:
+
+- verifica SSH e prerequisiti;
+- clona o aggiorna la repo sul server;
+- scrive `setup.env` direttamente via SFTP;
+- imposta il file a `0600`;
+- esegue il setup Linux;
+- configura Nginx Proxy Manager;
+- genera le chiavi runtime dove possibile;
+- avvia lo stack;
+- mostra i log;
+- recupera le credenziali generate per mostrarle nella schermata finale.
+
+## Metodo 2 — Server CLI
+
+Su Ubuntu:
 
 ```bash
 git clone https://github.com/dav1dera/stream-stack.git
@@ -101,28 +264,7 @@ cd stream-stack
 ./setup.sh
 ```
 
-`setup.sh` is the primary configuration tool. It creates a local, gitignored `setup.env`, asks for missing installation-specific values and renders the actual runtime files from the public `*.example` templates.
-
-It automatically:
-
-- creates all `.env`, `config.yaml`, `config.toml`, `config.json`, PgBouncer user-list and OAuth allow-list files;
-- creates all required bind-mount directories;
-- derives normal service hostnames from one `BASE_DOMAIN`;
-- accepts full per-service hostname overrides when different names are wanted;
-- applies the same LAN IP/subnet everywhere;
-- generates strong local-only secrets where possible;
-- keeps shared credentials identical across every service that consumes them;
-- gives the two Seanime instances separate generated passwords;
-- checks active files for unresolved `CHANGE_ME_*`, `example.com` and example-LAN values;
-- runs `docker compose config --quiet`;
-- optionally starts Gluetun, Headscale and Jackett to obtain runtime-generated keys;
-- starts Cloudflare DDNS + Nginx Proxy Manager;
-- creates/reuses the NPM administrator and Let's Encrypt certificate;
-- creates or updates the reference NPM proxy-host topology automatically.
-
-Detailed behavior is documented in **[docs/SETUP.md](docs/SETUP.md)**.
-
-## Alternative: fill one file yourself
+Oppure compilando un solo file:
 
 ```bash
 cp setup.env.example setup.env
@@ -131,463 +273,283 @@ nano setup.env
 ./setup.sh --non-interactive
 ```
 
-Do **not** commit `setup.env`. It contains secrets and is ignored by Git.
+Non è più necessario modificare manualmente decine di `.env` o file di configurazione.
 
-### Values you normally provide
+---
 
-The important operator inputs are:
+# Preparazione del server
 
-- `BASE_DOMAIN`
-- `SERVER_LAN_IP`
-- `LAN_SUBNET`
-- `ALLOWED_EMAIL`
-- Cloudflare API token
-- Mullvad/WireGuard private key + tunnel CIDR
-- TMDB API key + read token
-- TVDB API key
-- TorBox API key
-- Google OAuth client ID + secret
-
-Optional integrations such as MDBList, Gemini, AniList, Trakt and the StremThru GitHub integration can be left blank when deliberately unused.
-
-### Domains are fully configurable
-
-The reference names are only defaults.
-
-With:
+Target di riferimento:
 
 ```text
-BASE_DOMAIN=mydomain.net
+Ubuntu Server 24.04 LTS
+Docker Engine
+Docker Compose v2
 ```
 
-the wizard derives names such as:
+Servono inoltre:
+
+- IP LAN statico o riservato via DHCP;
+- accesso a `/dev/net/tun`;
+- TCP 80 e 443 inoltrate verso il server;
+- TCP/UDP 53 disponibile per AdGuard Home;
+- subnet Docker `172.18.0.0/24` e `172.19.0.0/24` non sovrapposte alla LAN;
+- dominio pubblico gestibile via DNS.
+
+Per Headscale / subnet routing:
+
+```bash
+cat <<'EOF' | sudo tee /etc/sysctl.d/99-stream-stack.conf
+net.ipv4.ip_forward=1
+net.ipv6.conf.all.forwarding=1
+EOF
+sudo sysctl --system
+```
+
+Se la porta 53 è occupata da `systemd-resolved`, liberarla prima di avviare AdGuard.
+
+---
+
+# Cosa chiede il setup
+
+Il setup usa **un'unica sorgente di verità**: `setup.env`.
+
+### Valori tipicamente inseriti dall'utente
+
+| Categoria | Valori |
+|---|---|
+| Rete | IP server, subnet LAN, timezone |
+| Domini | dominio base + eventuali hostname personalizzati |
+| Cloudflare | API token |
+| VPN | WireGuard private key + address CIDR |
+| Metadata | TMDB API key, TMDB read token, TVDB API key |
+| Debrid | TorBox API key |
+| OAuth | Google Client ID, Client Secret, email consentita |
+
+### Valori generati automaticamente se lasciati vuoti
+
+- password PostgreSQL;
+- AIOStreams `SECRET_KEY`;
+- password operatore AIOStreams;
+- AIO config access key;
+- password AIOMetadata;
+- password Comet;
+- token Comet / CometNet;
+- password MediaFlow;
+- secret Headplane;
+- cookie secret OAuth2 Proxy;
+- password e vault secret StremThru;
+- password Seanime principale;
+- password Seanime condiviso;
+- password admin NPM su installazione nuova.
+
+I valori condivisi vengono propagati automaticamente in tutti i servizi che devono usare la stessa credenziale.
+
+---
+
+# Domini e Nginx Proxy Manager
+
+NPM viene gestito come **desired state** dal setup.
+
+Se il proxy host esiste viene aggiornato; se non esiste viene creato.
+
+| Servizio pubblico | Target interno | Porta | WebSocket |
+|---|---|---:|:---:|
+| AIOStreams | `aiostreams` | 4444 | No |
+| AIOMetadata | `aiometadata` | 1337 | Sì |
+| MediaFlow | `mediaflow-proxy-light` | 8888 | No |
+| Headscale | `headscale` | 8080 | Sì |
+| Portainer | `portainer` | 9000 | No |
+| StremThru | `gluetun` | 9090 | No |
+| Seanime | `gluetun` | 43211 | Sì |
+| Seanime Shared | `gluetun` | 43311 | Sì |
+| CometNet | `gluetun` | 8765 | Sì |
+| StreamViX | `gluetun` | 7860 | No |
+
+Per i proxy gestiti vengono mantenuti:
+
+- HTTPS;
+- Force SSL;
+- HTTP/2;
+- HSTS;
+- Block Common Exploits;
+- WebSocket soltanto dove necessario.
+
+## Headscale + Headplane
+
+Il dominio Headscale usa una configurazione particolare:
 
 ```text
-aiostreams.mydomain.net
-mfp.mydomain.net
-headscale.mydomain.net
-seanime.mydomain.net
+/                 → Headscale
+/admin            → OAuth2 Proxy → Headplane
+/oauth2/*          → OAuth2 Proxy
+/oauth2/callback   → OAuth2 Proxy
 ```
 
-Every public service also has an optional full-FQDN override:
+Questa logica viene preservata anche se l'utente sceglie un hostname completamente diverso.
 
-```text
-AIOSTREAMS_HOST=aio.example.org
-MEDIAFLOW_HOST=proxy.example.net
-HEADSCALE_HOST=mesh.example.com
-SEANIME_HOST=anime.example.net
-```
+Documentazione tecnica aggiuntiva: [`docs/NPM.md`](docs/NPM.md).
 
-The labels do not need to match the reference names. Hostnames may even belong to different Cloudflare zones if the supplied token can edit those zones.
+---
 
-Those choices are propagated to application URLs, OAuth callbacks/whitelists, Headscale/Headplane, Honey, Cloudflare DDNS, Let's Encrypt and NPM. There is no hardcoded `example.com` assumption in the active configuration path.
+# AIOStreams
 
-### Values generated automatically when blank
+La configurazione runtime di AIOStreams vive nel database dell'applicazione e non viene pubblicata.
 
-Examples include:
+Il metodo consigliato è:
 
-- PostgreSQL password;
-- AIOStreams `SECRET_KEY`, operator password and config-access key;
-- AIOMetadata admin/addon passwords;
-- Comet admin/config/API/stream-proxy credentials;
-- MediaFlow password;
-- Headplane/OAuth2 cookie secrets;
-- StremThru password/vault secret;
-- both Seanime passwords;
-- Nginx Proxy Manager admin password.
+1. avviare AIOStreams con il setup della repo;
+2. importare un **JSON sanitizzato** della configurazione;
+3. inserire le proprie credenziali provider / indexer / Usenet;
+4. verificare le varianti e i filtri.
 
-The generated values are written back to local `setup.env` with mode `0600`.
+In questo modo la logica può essere replicata senza pubblicare database o token.
 
-### Runtime-generated Jackett / Headscale values
+La guida di riferimento è disponibile in [`docs/AIOSTREAMS.md`](docs/AIOSTREAMS.md).
 
-A fresh Jackett API key and fresh Headscale API/pre-auth keys do not exist until those applications have run.
+---
 
-With the default:
+# Runtime keys automatiche
+
+Su un'installazione nuova alcune chiavi non esistono prima del primo avvio.
+
+Con:
 
 ```text
 AUTO_RUNTIME_KEYS=true
 ```
 
-`setup.sh` starts only `gluetun`, `headscale` and `jackett`, then attempts to:
+il setup prova automaticamente a:
 
-- read Jackett's generated API key;
-- create the configured Headscale user;
-- generate the Headscale API key used by Headplane;
-- generate the Headscale pre-auth key used by the Tailscale container;
-- rerender the affected files automatically.
-
-If that bootstrap cannot be completed, the wizard lists the remaining value. Put it in `setup.env` and rerun `./setup.sh`.
+- rilevare l'API key generata da Jackett;
+- creare l'utente Headscale;
+- generare la Headscale API key per Headplane;
+- generare una pre-auth key per il container Tailscale;
+- riscrivere i file dipendenti con i nuovi valori.
 
 ---
 
-# 4. Values synchronized automatically
+# Operazioni ancora manuali
 
-The wizard deliberately uses a single source of truth for shared values.
+Per scelta, alcune informazioni non vengono inventate o pubblicate.
 
-| Value | Consumers |
-|---|---|
-| PostgreSQL password | PostgreSQL, PgBouncer, PgBouncer userlist, Comet, CometNet, StremThru |
-| AIO operator login | AIOStreams auth, permissions and forced native-service credential |
-| Comet public token | Comet, CometNet and AIOStreams Comet integration |
-| Jackett API key | AIOStreams + Comet |
-| MediaFlow password | MediaFlow + StreamViX |
-| TorBox key | AIOStreams + Comet |
-| Google OAuth client | OAuth2 Proxy and related Headplane template values |
-| Headscale hostname | Headscale, Headplane, OAuth2 Proxy, Tailscale and NPM |
-| Server LAN IP/subnet | Headscale, Tailscale, Honey and relevant generated config |
-| Service hostnames | application config, Cloudflare DDNS, NPM and HTTPS certificate |
+### AdGuard Home
 
-You should not need to synchronize these file-by-file.
-
----
-
-# 5. Database and proxy foundation
-
-`setup.sh` may already have started some bootstrap services. Confirm the database layer:
-
-```bash
-docker compose --profile db up -d postgres redis pgbouncer
-docker compose ps postgres redis pgbouncer
-docker exec postgres pg_isready -U postgres
-docker exec pgbouncer pg_isready -h 127.0.0.1 -p 6432 -U postgres
-```
-
-On an empty `pgdata`, the supplied init SQL creates empty `comet` and `stremthru` databases.
-
-Start/confirm the proxy chain:
-
-```bash
-docker compose up -d gluetun microwarp gost
-docker inspect --format '{{.State.Health.Status}}' gluetun
-```
-
-Do not continue until Gluetun is `healthy`.
-
-Reference proxy endpoints:
-
-- `socks5h://gluetun:1081`
-- `http://gluetun:8889`
-- `socks5h://warp:1080`
-- `http://gost:8082`
-
-MicroWARP creates a fresh identity in `warp-data`; do not copy another installation's WARP state.
-
----
-
-# 6. Public DNS + Nginx Proxy Manager
-
-This stage is part of `./setup.sh` by default.
-
-The wizard:
-
-1. keeps the wildcard `*.BASE_DOMAIN` DDNS behavior of the reference deployment;
-2. also adds every selected public hostname explicitly to Cloudflare DDNS;
-3. starts `cloudflare-ddns` and `npm`;
-4. creates the NPM initial admin automatically on a fresh database;
-5. authenticates to the NPM API;
-6. reuses a suitable existing Let's Encrypt certificate or requests one shared SAN certificate for all selected public hostnames;
-7. creates or updates the proxy hosts below;
-8. verifies the required domains exist in NPM.
-
-NPM is therefore **not** a manual file-by-file or host-by-host setup anymore.
-
-Reference forwarding logic:
-
-| Setup setting | Forward target | WebSocket |
-|---|---|---:|
-| `AIOSTREAMS_HOST` | `aiostreams:4444` | no |
-| `AIOMETADATA_HOST` | `aiometadata:1337` | yes |
-| `MEDIAFLOW_HOST` | `mediaflow-proxy-light:8888` | no |
-| `HEADSCALE_HOST` | `headscale:8080` | yes |
-| `PORTAINER_HOST` | `portainer:9000` | no |
-| `STREMTHRU_HOST` | `gluetun:9090` | no |
-| `SEANIME_HOST` | `gluetun:43211` | yes |
-| `SEANIME_SHARED_HOST` | `gluetun:43311` | yes |
-| `COMETNET_HOST` | `gluetun:8765` | yes |
-| `STREAMVIX_HOST` | `gluetun:7860` | no |
-
-For all managed hosts the reference security/transport logic is retained: HTTPS certificate assigned, Force SSL, HTTP/2, HSTS + subdomains and Block Common Exploits enabled; caching remains disabled; WebSocket is enabled only where required.
-
-The Headscale hostname also receives the special `/admin` and `/oauth2/` locations that route through OAuth2 Proxy to Headplane. Those locations are generated using the actual selected `HEADSCALE_HOST`.
-
-See **[docs/NPM.md](docs/NPM.md)** for the exact desired state and manual fallback.
-
-To prevent the wizard from touching NPM:
-
-```bash
-./setup.sh --no-npm
-```
-
-or set:
-
-```text
-AUTO_CONFIGURE_NPM=false
-```
-
----
-
-# 7. Headscale + OAuth2 Proxy + Tailscale
-
-If automatic runtime-key bootstrap succeeded, `setup.env` already contains the fresh Headscale API key and pre-auth key and the generated Headplane/Tailscale runtime files already contain them.
-
-Confirm the Headscale state:
-
-```bash
-docker compose up -d headscale
-docker exec -it headscale headscale users list
-```
-
-If automatic generation was disabled or failed, the equivalent manual commands are:
-
-```bash
-docker exec -it headscale headscale users create admin
-docker exec -it headscale headscale users list
-docker exec -it headscale headscale apikeys create --expiration 999d
-docker exec -it headscale headscale preauthkeys create --user USER_ID --expiration 24h
-```
-
-Put manually generated values in `setup.env`, **not directly in multiple service files**, then rerun:
-
-```bash
-./setup.sh
-```
-
-The Headscale configuration uses sequential `100.64.0.0/10` allocation and MagicDNS. If the server is the first node it will normally receive `100.64.0.1`, which is the reference DNS address in the template.
-
-Create the Google OAuth client using the actual selected Headscale hostname:
-
-```text
-https://<HEADSCALE_HOST>/oauth2/callback
-```
-
-The wizard writes its client ID/secret and allowed email into OAuth2 Proxy.
-
-Start/confirm:
-
-```bash
-docker compose up -d headplane oauth2-proxy tailscale
-docker exec -it headscale headscale nodes list
-```
-
-Open `https://<HEADSCALE_HOST>/admin`, authenticate, then approve subnet-route/exit-node capability when required.
-
----
-
-# 8. DNSCrypt + AdGuard Home
-
-Start DNSCrypt:
-
-```bash
-docker compose up -d dnscrypt-proxy
-```
-
-The tracked configuration listens internally at `172.18.0.4:5353` and preserves the reference resolver/cache setup.
-
-Start fresh AdGuard:
-
-```bash
-docker compose up -d adguardhome
-```
-
-Open the first-run wizard at:
+Primo avvio:
 
 ```text
 http://SERVER_LAN_IP:3010
 ```
 
-The Compose mapping is `3010:3000` because a clean AdGuard container exposes the setup wizard internally on port 3000.
+Impostazioni previste:
 
-In the wizard set:
-
-- web UI: `0.0.0.0:90`;
-- DNS: `0.0.0.0:53`;
-- upstream DNS: `172.18.0.4:5353`.
-
-After setup, use `http://SERVER_LAN_IP:90`.
-
-Only change the LAN/router DNS to `SERVER_LAN_IP` after:
-
-```bash
-dig @SERVER_LAN_IP cloudflare.com
-dig @SERVER_LAN_IP github.com
+```text
+Web UI:     0.0.0.0:90
+DNS:        0.0.0.0:53
+Upstream:   172.18.0.4:5353
 ```
 
-If this server's Headscale address is not `100.64.0.1`, change `dns.nameservers.global` in the Headscale template/runtime config accordingly.
+### Jackett
+
+Aprire:
+
+```text
+http://SERVER_LAN_IP:9117
+```
+
+e aggiungere i propri indexer.
+
+### AIOStreams
+
+Importare il JSON sanitizzato e aggiungere le credenziali private.
+
+### Portainer
+
+Creare l'account admin della nuova installazione e selezionare l'ambiente Docker locale.
+
+### Seanime
+
+Database, librerie e stato utente vengono creati localmente e non fanno parte della repo pubblica.
 
 ---
 
-# 9. Start the full stack
+# Avvio dello stack
 
 ```bash
 docker compose --profile all up -d
 docker compose --profile all ps
 ```
 
-Do not continue while a required service is `restarting` or `unhealthy`.
+Servizi critici come Gluetun devono risultare `healthy` prima di considerare il deployment completato.
 
 ---
 
-# 10. Required first-run application state
+# Verifica finale
 
-The one-shot wizard removes **file-by-file configuration**, but it cannot safely publish or manufacture external accounts and application database state.
-
-## Jackett
-
-The API key is normally discovered automatically by `setup.sh`.
-
-You still need to open:
-
-```text
-http://SERVER_LAN_IP:9117
-```
-
-and add **your own** torrent indexers. To mirror the reference behavior, keep caching enabled, TTL around `2100` seconds and max results per indexer around `1000`.
-
-## AIOStreams
-
-AIOStreams runtime settings live in its own database. The repository configures the bootstrap `.env`, local credentials and integrations shared with the rest of the stack.
-
-For reproducing the reference runtime configuration, import your **sanitized AIOStreams JSON export with credentials removed**, then add the new installation's provider/indexer/Usenet credentials through AIOStreams.
-
-This avoids publishing the AIOStreams DB or secrets.
-
-`docs/AIOSTREAMS.md` remains the behavioral reference for the four variants and expected filtering/failover behavior.
-
-## MediaFlow Proxy Light
-
-Its password is generated once and propagated automatically to StreamViX. If the AIOStreams JSON references MediaFlow credentials, use the same value stored in `setup.env`.
-
-## StreamViX
-
-The tracked template preserves both-link mode, AnimeUnity + AnimeSaturn enabled, WARP SOCKS5 primary proxy, GOST/WARP HTTP fallback and MediaFlow integration.
-
-## Comet + CometNet
-
-The tracked templates preserve scraper modes, cache TTLs, queue thresholds, workers, PostgreSQL/PgBouncer integration and CometNet bootstrap peers.
-
-Comet itself remains LAN/internal on port `2020`; AIOStreams reaches it through `http://gluetun:2020`.
-
-## StremThru
-
-The template preserves port 9090, PostgreSQL, Redis and the Gluetun namespace. The wizard generates the local login/vault secret; add a minimally scoped GitHub token only if that integration is desired.
-
-## AIOMetadata
-
-The template preserves Redis, SOCKS routing, cache warming and MAL warming. Third-party API/OAuth credentials come from `setup.env`.
-
-After creating the desired AIOMetadata configuration, put its UUID in:
-
-```text
-AIOMETADATA_CONFIG_UUID=
-```
-
-inside `setup.env` and rerun `./setup.sh`.
-
-## Seanime main + shared
-
-The wizard generates both config files and separate passwords:
-
-- main -> port `43211`;
-- shared -> port `43311`.
-
-Libraries/databases/download state remain local and are intentionally not published.
-
-## Honey
-
-Honey is rendered automatically from the chosen public hostnames plus `SERVER_LAN_IP`, `PROXMOX_IP` and `AMP_IP`.
-
-## Portainer
-
-Open `http://SERVER_LAN_IP:9000`, create the new admin account and select the local Docker environment through the mounted Docker socket.
-
-## TeamSpeak 6
-
-Inspect first-start logs for its initial privilege/setup token:
-
-```bash
-docker logs teamspeak
-```
-
-Watchtower and Deunhealth require no UI setup; the tracked values preserve the reference Watchtower schedule and health-based restart behavior.
-
----
-
-# 11. End-to-end verification
-
-## No unresolved template values
+### Placeholder non risolti
 
 ```bash
 grep -RIn --exclude='*.example' 'CHANGE_ME_' data || true
 grep -RIn --exclude='*.example' 'example\.com' data || true
 ```
 
-Both should be empty in active runtime files. `./setup.sh` performs the same class of check automatically.
+Non dovrebbero produrre output nei file runtime attivi.
 
-## Compose / containers
+### Docker Compose
 
 ```bash
 docker compose config --quiet
 docker compose --profile all ps
 ```
 
-## Databases
+### PostgreSQL
 
 ```bash
-docker exec postgres psql -U postgres -Atc "SELECT datname FROM pg_database WHERE datname IN ('comet','stremthru') ORDER BY datname;"
+docker exec postgres psql -U postgres -Atc \
+  "SELECT datname FROM pg_database WHERE datname IN ('comet','stremthru') ORDER BY datname;"
 ```
 
-Expected: `comet` and `stremthru`.
-
-## VPN
+### VPN
 
 ```bash
 docker inspect --format '{{.State.Health.Status}}' gluetun
 docker exec gluetun wget -qO- https://ipinfo.io/ip || true
 ```
 
-## DNS
+### DNS
 
 ```bash
 dig @SERVER_LAN_IP cloudflare.com
 dig @SERVER_LAN_IP github.com
 ```
 
-## Headscale
+### Headscale
 
 ```bash
 docker exec -it headscale headscale users list
 docker exec -it headscale headscale nodes list
 ```
 
-## NPM / HTTPS
+### Streaming
 
-Inspect the locally generated non-secret desired state:
+Il deployment non è considerato realmente riprodotto finché AIOStreams non viene verificato con:
 
-```bash
-cat data/npm/stream-stack-hosts.json
-```
-
-Verify the selected public hosts for AIOStreams, AIOMetadata, MediaFlow, Headscale/Headplane, StreamViX, both Seanime instances, StremThru and CometNet.
-
-The deployment is not considered reproduced if the Headscale hostname serves Headscale on `/` but fails to send `/admin` through OAuth2 Proxy to Headplane.
-
-## Streaming behavior
-
-The deployment is not considered reproduced until AIOStreams succeeds for:
-
-- a normal movie;
-- a normal series episode;
-- an anime episode;
-- TorBox/debrid;
+- film;
+- episodio serie;
+- episodio anime;
+- TorBox / debrid;
 - Usenet;
 - MediaFlow;
 - Comet;
 - StremThru;
-- every intended AIOStreams profile/variant.
+- tutte le varianti/profili previsti.
 
 ---
 
-# 12. 29-service completion checklist
+# Checklist servizi
+
+<details>
+<summary><strong>Mostra i 29 servizi</strong></summary>
 
 - [ ] tailscale
 - [ ] portainer
@@ -619,23 +581,31 @@ The deployment is not considered reproduced until AIOStreams succeeds for:
 - [ ] seanime
 - [ ] seanime-shared
 
+</details>
+
 ---
 
-# 13. Reset / backup semantics
+# Sicurezza
 
-Recreating a container is normally safe; deleting its persistent directory or named volume is not.
+`setup.env` contiene segreti ed è escluso da Git.
 
-In particular, deleting `pgdata`, `warp-data`, Headscale `data/lib`, AIOStreams `data`, NPM `data` or Seanime data resets that application's state.
+Il wizard Windows:
 
-Back up private runtime state separately. Never add those backups to this public repository.
+- mantiene i secret in memoria sul PC;
+- invia `setup.env` direttamente via SFTP;
+- imposta il file remoto a `0600`;
+- non committa credenziali;
+- non include database o certificati nella repo pubblica.
 
-# Security check before every public push
-
-`setup.env` and all rendered runtime files are ignored, but still review the repository before publishing:
+Prima di ogni push pubblico è comunque consigliato controllare:
 
 ```bash
 git grep -nE '(ghp_|github_pat_|GOCSPX-|AIza|WIREGUARD_PRIVATE_KEY=[^C]|API_TOKEN=[^C]|PASSWORD=[^C])' || true
 git status --ignored
 ```
 
-Public Git should contain only templates, scripts and documentation — never generated credentials or databases.
+---
+
+<p align="center">
+  <strong>Un solo setup, una sola sorgente di configurazione, stessa logica dello stack di riferimento.</strong>
+</p>
