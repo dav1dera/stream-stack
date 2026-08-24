@@ -36,3 +36,6 @@ setup.env
 **/config.json
 !**/config.toml.example
 !**/config.json.example
+
+# NPM desired state generated from setup.env
+/data/npm/stream-stack-hosts.json
