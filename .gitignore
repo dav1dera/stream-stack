@@ -1,6 +1,7 @@
 # Real secrets and local copies generated from templates
 .env
 **/.env
+setup.env
 **/allowed-emails.txt
 **/userlist.txt
 **/config.yaml
