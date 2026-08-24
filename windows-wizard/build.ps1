@@ -22,7 +22,8 @@ $Py = ".\.venv-build\Scripts\python.exe"
     --hidden-import app `
     --hidden-import remote `
     --hidden-import launcher `
-    demo_launcher.py
+    --hidden-import demo_launcher `
+    local_ready.py
 
 Write-Host ""
 Write-Host "Build completata: $PSScriptRoot\dist\StreamStackSetupWizard.exe" -ForegroundColor Green
