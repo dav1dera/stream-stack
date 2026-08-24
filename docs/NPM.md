@@ -1,45 +1,125 @@
-# Nginx Proxy Manager — reference routing
+# Nginx Proxy Manager — automated reference routing
 
-This document is part of the required installation procedure in the root `README.md`.
-It recreates the reverse-proxy topology of the reference deployment without copying the NPM database or certificates.
+This repository treats Nginx Proxy Manager as **desired state**, not as a database that must be copied from another installation.
 
-## Before creating proxy hosts
+The normal installation path is simply:
 
-1. Point your public wildcard DNS record (`*.example.com`) to the Docker host public IP. The included Cloudflare DDNS container keeps it updated when configured.
-2. Forward TCP ports **80** and **443** from the router to the Docker host.
-3. In Nginx Proxy Manager, obtain a Let's Encrypt certificate covering your hostnames (a wildcard certificate is convenient).
-4. For every host below enable **Block Common Exploits**, **Force SSL** and **HSTS**. Enable WebSocket support only where the table says `yes`.
-5. Replace `example.com` with your own domain everywhere.
+```bash
+./setup.sh
+```
 
-## Proxy hosts
+After the main renderer has created the runtime files, `scripts/npm_apply.py` starts Cloudflare DDNS and Nginx Proxy Manager, logs into the NPM API, obtains/reuses a shared Let's Encrypt certificate and creates or updates the proxy hosts below.
 
-| Public hostname | Scheme | Forward host | Port | WebSocket |
-|---|---|---|---:|---|
-| `aiostreams.example.com` | `http` | `aiostreams` | 4444 | no |
-| `aiometadata.example.com` | `http` | `aiometadata` | 1337 | yes |
-| `mfp.example.com` | `http` | `mediaflow-proxy-light` | 8888 | no |
-| `headscale.example.com` | `http` | `headscale` | 8080 | yes |
-| `portainer.example.com` | `http` | `portainer` | 9000 | no |
-| `stremthru.example.com` | `http` | `gluetun` | 9090 | no |
-| `seanime.example.com` | `http` | `gluetun` | 43211 | yes |
-| `shared-seanime.example.com` | `http` | `gluetun` | 43311 | yes |
-| `cometnet.example.com` | `http` | `gluetun` | 8765 | yes |
-| `streamv.example.com` | `http` | `gluetun` | 7860 | no |
+No NPM SQLite database, certificate private key or previous installation state is shipped in Git.
 
-`Comet` itself remains available on the LAN at `http://SERVER_LAN_IP:2020` in the reference stack. AIOStreams reaches it internally through `http://gluetun:2020`; a public Comet proxy host is not required.
+## Hostnames are not hardcoded
+
+The reference topology is fixed, but the **public names are not**.
+
+`BASE_DOMAIN` only supplies convenient defaults. For example, with:
+
+```text
+BASE_DOMAIN=mydomain.net
+```
+
+the wizard derives names such as `aiostreams.mydomain.net`, `headscale.mydomain.net`, etc.
+
+Every public service can instead use a completely different FQDN in `setup.env`:
+
+```text
+AIOSTREAMS_HOST=aio.media.example
+MEDIAFLOW_HOST=proxy.example.net
+HEADSCALE_HOST=mesh.example.org
+SEANIME_HOST=anime.home.example
+```
+
+Those overrides are propagated to the service configs, OAuth callback/whitelist values, Honey links, Cloudflare DDNS and NPM. They may use different Cloudflare zones as long as the supplied API token has DNS edit access to those zones.
+
+The DDNS renderer preserves the reference wildcard record for `*.BASE_DOMAIN` **and** explicitly manages every selected public hostname. This avoids an old/stale explicit DNS record shadowing the wildcard.
+
+## NPM administrator
+
+On a fresh NPM database, the wizard injects the supported initial-admin environment variables before the first NPM start.
+
+The relevant one-file settings are:
+
+```text
+NPM_ADMIN_EMAIL=
+NPM_ADMIN_PASSWORD=
+LETSENCRYPT_EMAIL=
+AUTO_CONFIGURE_NPM=true
+```
+
+Defaults:
+
+- blank `NPM_ADMIN_EMAIL` -> `ALLOWED_EMAIL`;
+- blank `NPM_ADMIN_PASSWORD` -> a strong locally generated password;
+- blank `LETSENCRYPT_EMAIL` -> `ALLOWED_EMAIL`.
+
+The resolved password is stored only in the gitignored `setup.env` and generated `data/npm/.env`.
+
+If the NPM database already exists, `INITIAL_ADMIN_*` deliberately does **not** overwrite the existing account. Put the current NPM login into `setup.env` and rerun `./setup.sh`.
+
+## Reference proxy topology
+
+The wizard reproduces the same forwarding logic as the reference private deployment:
+
+| Setup setting | Forward scheme | Forward target | Port | WebSocket |
+|---|---|---|---:|---:|
+| `AIOSTREAMS_HOST` | `http` | `aiostreams` | 4444 | no |
+| `AIOMETADATA_HOST` | `http` | `aiometadata` | 1337 | yes |
+| `MEDIAFLOW_HOST` | `http` | `mediaflow-proxy-light` | 8888 | no |
+| `HEADSCALE_HOST` | `http` | `headscale` | 8080 | yes |
+| `PORTAINER_HOST` | `http` | `portainer` | 9000 | no |
+| `STREMTHRU_HOST` | `http` | `gluetun` | 9090 | no |
+| `SEANIME_HOST` | `http` | `gluetun` | 43211 | yes |
+| `SEANIME_SHARED_HOST` | `http` | `gluetun` | 43311 | yes |
+| `COMETNET_HOST` | `http` | `gluetun` | 8765 | yes |
+| `STREAMVIX_HOST` | `http` | `gluetun` | 7860 | no |
+
+For every managed host the wizard applies:
+
+- SSL certificate assigned;
+- Force SSL = on;
+- HTTP/2 = on;
+- HSTS = on;
+- HSTS subdomains = on;
+- Block Common Exploits = on;
+- caching = off;
+- WebSocket support exactly as shown above.
+
+`Comet` itself stays LAN/internal on port `2020`; AIOStreams reaches it internally as `http://gluetun:2020`, matching the reference architecture.
+
+## Shared certificate
+
+The wizard uses **one shared Let's Encrypt certificate** for the actual selected public hostnames.
+
+It intentionally requests exact SAN names instead of assuming `*.example.com`. This keeps the same single-certificate logic while also supporting installers who choose arbitrary labels or hostnames in different zones.
+
+Cloudflare DDNS is started before NPM requests the certificate, and the reference setting remains `PROXIED=false`, so HTTP-01 validation can reach NPM on forwarded TCP port 80.
+
+Before running the installer, the router must forward TCP 80/443 to the Docker host and the Cloudflare API token must be able to create/update the selected DNS records.
+
+If DNS has not propagated yet, certificate issuance can fail. Nothing is lost: fix DNS/port forwarding and rerun `./setup.sh`. Existing proxy hosts/certificates are discovered and reused where possible.
 
 ## Headscale + Headplane + OAuth2 Proxy
 
-The public hostname `headscale.example.com` serves two different applications:
+This is the only proxy host with special advanced routing.
 
-- `/` is Headscale itself (`headscale:8080`);
-- `/admin` and `/oauth2/` are routed through `oauth2-proxy:4180`, which authenticates the user and then forwards to Headplane.
+The public value of `HEADSCALE_HOST` serves two applications on one hostname:
 
-Create the normal `headscale.example.com -> headscale:8080` Proxy Host first, enable WebSockets, SSL, Force SSL and HSTS, then paste the following in its **Advanced** field after replacing the hostname:
+- `/` -> Headscale (`headscale:8080`);
+- `/admin` -> OAuth2 Proxy -> Headplane;
+- `/oauth2/` -> OAuth2 Proxy;
+- `/oauth2/callback` -> OAuth2 Proxy with the same unauthorized-login behavior as the reference server.
+
+The wizard generates the Advanced Nginx block dynamically from the chosen `HEADSCALE_HOST`; there is no hardcoded domain in it.
+
+Equivalent generated logic:
 
 ```nginx
 location = /admin/logout.data {
-    add_header X-Remix-Redirect "https://headscale.example.com/oauth2/sign_in?rd=%2Fadmin" always;
+    add_header X-Remix-Redirect "https://<HEADSCALE_HOST>/oauth2/sign_in?rd=%2Fadmin" always;
     add_header X-Remix-Reload-Document "true" always;
     return 204;
 }
@@ -82,21 +162,56 @@ location /admin {
 }
 ```
 
-The Headplane configuration intentionally keeps its own OIDC block disabled; authentication is performed by OAuth2 Proxy in front of Headplane, matching the reference architecture.
+Headplane's own OIDC block stays disabled; OAuth2 Proxy remains the authentication layer, matching the reference deployment.
+
+## Idempotency / reruns
+
+`npm_apply.py` does not blindly create duplicates.
+
+On every run it:
+
+1. resolves the selected hostname for every managed service;
+2. logs into the local NPM API;
+3. searches existing Let's Encrypt certificates for one covering all selected hosts;
+4. reuses it when possible or creates a new shared certificate;
+5. searches existing proxy hosts by domain name;
+6. updates matching hosts in place or creates missing ones;
+7. verifies that every required hostname is present afterward.
+
+Unrelated/manual NPM proxy hosts are left untouched.
+
+For inspection, the resolved non-secret desired state is written locally to:
+
+```text
+data/npm/stream-stack-hosts.json
+```
+
+That file is gitignored.
+
+## Disable NPM automation
+
+For debugging or an existing NPM installation you do not want the wizard to alter:
+
+```bash
+./setup.sh --no-npm
+```
+
+or set:
+
+```text
+AUTO_CONFIGURE_NPM=false
+```
+
+Then use the topology table and Headscale Advanced block above as the manual equivalent.
 
 ## Verification
 
-After creating the hosts:
+After `./setup.sh` succeeds:
 
 ```bash
-curl -I https://aiostreams.example.com
-curl -I https://mfp.example.com
-curl -I https://headscale.example.com
-curl -I https://headscale.example.com/admin
+curl -I "https://$(grep '^AIOSTREAMS_HOST=' setup.env | cut -d= -f2-)"
+curl -I "https://$(grep '^MEDIAFLOW_HOST=' setup.env | cut -d= -f2-)"
+curl -I "https://$(grep '^HEADSCALE_HOST=' setup.env | cut -d= -f2-)"
 ```
 
-Expected behavior:
-
-- the first three hosts answer through NPM over HTTPS;
-- `/admin` redirects to Google/OAuth2 Proxy when no valid session is present;
-- Seanime and CometNet WebSocket connections remain stable through NPM.
+Also open `<HEADSCALE_HOST>/admin` in a browser. With no valid OAuth session it should enter the OAuth2 Proxy/Google login flow, while normal Headscale traffic continues to use `/`.
