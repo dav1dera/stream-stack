@@ -17,7 +17,7 @@ The GUI follows the same setup model as the terminal wizard but presents it as a
 7. optional integrations;
 8. review/validation;
 9. remote installation with live logs;
-10. final links and remaining first-run tasks.
+10. final links, generated credentials and remaining first-run tasks.
 
 It keeps the reference stack logic intact. Public FQDNs are operator-defined; internal routing remains the same, including services reached through the Gluetun network namespace and the Headscale -> OAuth2 Proxy -> Headplane routing.
 
@@ -29,24 +29,35 @@ It keeps the reference stack logic intact. Public FQDNs are operator-defined; in
 - The remote file is set to mode `0600`.
 - `setup.env` is gitignored by the repository.
 - The review page intentionally does not display secret values.
+- After setup, only the generated/user-facing credentials needed by the final page are read back over the existing SSH connection and held in memory.
+- Closing the application discards those Windows-side values; the authoritative copy remains the private remote `setup.env`.
 
-The SSH client loads existing Windows/OpenSSH known hosts when available. For an unknown server it accepts the key on first connection and shows the resulting fingerprint after the test connection; verify that fingerprint when connecting to an untrusted network.
+The SSH client loads existing Windows/OpenSSH known hosts when available. For an unknown server it accepts the key on first connection and shows the SHA-256 fingerprint after the test connection; verify that fingerprint when connecting over an untrusted network.
 
-## Run from source
+## Easiest launch from source
 
 Requirements: Windows 10/11 and Python 3.11+.
-
-From PowerShell:
 
 ```powershell
 git clone https://github.com/dav1dera/stream-stack.git
 cd stream-stack\windows-wizard
+```
+
+Then either double-click:
+
+```text
+Start-Wizard.cmd
+```
+
+or run:
+
+```powershell
 .\run.ps1
 ```
 
-`run.ps1` creates a local Python virtual environment, installs only the GUI/SSH dependencies and launches the wizard.
+`run.ps1` creates a local Python virtual environment, installs only the GUI/SSH dependencies and launches `launcher.py`.
 
-If PowerShell blocks local scripts for the current process:
+If PowerShell blocks local scripts, `Start-Wizard.cmd` already invokes it with a process-local execution-policy bypass. You can also use:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -68,7 +79,7 @@ Output:
 windows-wizard\dist\StreamStackSetupWizard.exe
 ```
 
-GitHub Actions also syntax-checks the Python source and builds the same standalone EXE as the artifact `StreamStackSetupWizard-Windows`.
+GitHub Actions syntax-checks `app.py`, `remote.py` and `launcher.py`, then builds the same standalone EXE as the artifact `StreamStackSetupWizard-Windows`.
 
 ## SSH authentication
 
@@ -79,7 +90,9 @@ The wizard supports:
 - encrypted private key + passphrase;
 - SSH agent/default keys when no password/key path is supplied.
 
-The optional sudo password is only used when `Install prerequisites automatically` is enabled. If blank, the wizard falls back to the SSH password for sudo.
+The optional sudo password is only used when `Install prerequisites automatically` is enabled. If blank, the wizard falls back to the SSH password. With key authentication and passwordless sudo it uses `sudo -n`.
+
+If Docker is installed during the run, the wizard reconnects SSH after adding the user to the `docker` group so the new group membership applies before continuing.
 
 ## Remote deployment
 
@@ -92,15 +105,33 @@ Default remote path:
 During installation the GUI:
 
 - checks Git, Python, Docker and Docker Compose;
+- verifies that the SSH user can actually access the Docker daemon;
 - optionally installs missing prerequisites on Ubuntu;
 - clones the repo, or performs `git pull --ff-only` when it already exists;
-- uploads the complete `setup.env`;
+- uploads the complete `setup.env` directly via SFTP;
 - runs `./setup.sh --non-interactive`;
 - therefore uses the same Headscale/Jackett runtime-key automation and NPM desired-state automation as the CLI installer;
+- reads back the newly generated user-facing credentials into memory for the completion screen;
 - optionally runs `docker compose --profile all up -d`;
 - displays `docker compose --profile all ps` in the log when finished.
 
 The GUI does not reimplement the stack logic. The Linux scripts remain the single source of truth; Windows only collects inputs and orchestrates them remotely.
+
+## Generated credentials on the final page
+
+When passwords/keys are intentionally left blank, Linux generates them. The completion page exposes masked, copyable values for items such as:
+
+- NPM admin;
+- AIOStreams user/password/config key;
+- StremThru login;
+- both Seanime passwords;
+- MediaFlow password;
+- Comet credentials/API token;
+- shared PostgreSQL password;
+- Headscale API key;
+- Jackett API key.
+
+Use the eye button to reveal one value or `Copia tutte le credenziali generate` to put the generated set on the Windows clipboard.
 
 ## Domain behavior
 
@@ -125,7 +156,7 @@ stremthru.example.com
 portainer.example.com
 ```
 
-Disable `Use standard hostnames` to type any full hostname for each service. Those hostnames are written to `setup.env` and are therefore consumed by the same Linux renderer and NPM automation.
+Disable `Usa nomi standard derivati dal dominio base` to type any full hostname for each service. Those hostnames are written to `setup.env` and are therefore consumed by the same Linux renderer, OAuth configuration and NPM automation.
 
 ## Still manual by design
 
