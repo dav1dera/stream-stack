@@ -21,7 +21,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python source
-        run: python -m py_compile windows-wizard/app.py
+        run: |
+          python -m py_compile windows-wizard/app.py
+          python -m py_compile windows-wizard/remote.py
+          python -m py_compile windows-wizard/launcher.py
 
   build-windows:
     needs: syntax
@@ -40,7 +43,7 @@ jobs:
         shell: pwsh
         working-directory: windows-wizard
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name StreamStackSetupWizard --collect-all customtkinter app.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name StreamStackSetupWizard --collect-all customtkinter --hidden-import app --hidden-import remote launcher.py
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
