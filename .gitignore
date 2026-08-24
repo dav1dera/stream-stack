@@ -39,3 +39,11 @@ setup.env
 
 # NPM desired state generated from setup.env
 /data/npm/stream-stack-hosts.json
+
+# Windows wizard local/build files
+windows-wizard/.venv/
+windows-wizard/.venv-build/
+windows-wizard/build/
+windows-wizard/dist/
+windows-wizard/*.spec
+windows-wizard/__pycache__/
