@@ -1,0 +1,9 @@
+# Local-LAN additions loaded automatically by Docker Compose alongside docker-compose.yml.
+# Services using `network_mode: service:gluetun` must publish their host ports on
+# the Gluetun service itself. These two ports make both Seanime instances
+# reachable directly from the LAN after the Windows wizard finishes.
+services:
+  gluetun:
+    ports:
+      - "43211:43211"
+      - "43311:43311"
