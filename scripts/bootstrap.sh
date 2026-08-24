@@ -48,5 +48,5 @@ mkdir -p \
   "$ROOT/data/tailscale/data/state"
 
 echo
-echo "Templates copied. Edit every CHANGE_ME_* value before starting the stack."
-echo "Run: grep -RIn --exclude='*.example' 'CHANGE_ME_' \"$ROOT/data\""
+echo "Templates copied. Recommended: run ./setup.sh to configure the entire stack from one setup.env file."
+echo "Manual check: grep -RIn --exclude='*.example' 'CHANGE_ME_' \"$ROOT/data\""
