@@ -51,7 +51,7 @@ services:
       - "53:53/tcp"
       - "53:53/udp"
       - "90:90"
-      - "3010:3010"
+      - "3010:3000"
     networks:
       default:
         ipv4_address: 172.18.0.3
