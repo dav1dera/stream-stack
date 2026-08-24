@@ -29,3 +29,9 @@
 *.log
 *.pid
 *.bak
+
+# Generated application configuration copied from public templates
+**/config.toml
+**/config.json
+!**/config.toml.example
+!**/config.json.example
