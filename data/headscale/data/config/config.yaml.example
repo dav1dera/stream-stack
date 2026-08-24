@@ -63,17 +63,17 @@ policy:
 
 dns:
   magic_dns: true
-  base_domain: tailnet.example.com
+  base_domain: wg.net
   override_local_dns: true
   nameservers:
     global:
-      - 192.168.1.10
+      - 100.64.0.1
     split: {}
   search_domains: []
   extra_records:
-    - name: temp.tailnet.example.com
+    - name: temp.tailscale.example.com
       type: A
-      value: 192.168.1.10
+      value: CHANGE_ME_SERVER_LAN_IP
 
 unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"
