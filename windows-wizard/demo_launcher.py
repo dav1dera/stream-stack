@@ -61,10 +61,16 @@ DEMO_VALUES = {
 class Wizard(hardened.Wizard):
     def __init__(self) -> None:
         self.demo_env_text = ""
+        self._active_scroll_page = None
         super().__init__()
 
     def demo_enabled(self) -> bool:
         return self.bool_var("DEMO_DRY_RUN").get()
+
+    def scroll_page(self) -> ctk.CTkScrollableFrame:
+        page = super().scroll_page()
+        self._active_scroll_page = page
+        return page
 
     def enable_demo_mode(self) -> None:
         self.bool_var("DEMO_DRY_RUN").set(True)
@@ -104,10 +110,9 @@ class Wizard(hardened.Wizard):
 
     def build_welcome(self) -> None:
         super().build_welcome()
-        children = self.content_holder.winfo_children()
-        if not children:
+        page = self._active_scroll_page
+        if page is None or not page.winfo_exists():
             return
-        page = children[0]
         body = self.card(
             page,
             "Demo / Dry Run",
@@ -173,10 +178,9 @@ class Wizard(hardened.Wizard):
         super().build_review()
         if not self.demo_enabled():
             return
-        children = self.content_holder.winfo_children()
-        if not children:
+        page = self._active_scroll_page
+        if page is None or not page.winfo_exists():
             return
-        page = children[0]
         body = self.card(page, "Dry Run attivo")
         ctk.CTkLabel(
             body,
