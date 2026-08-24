@@ -93,7 +93,7 @@ docker run --rm hello-world
 
 # 3. Configure the whole repository once
 
-The normal installation path no longer requires editing every service file manually.
+The normal installation path does **not** require editing service files one by one.
 
 ```bash
 git clone https://github.com/dav1dera/stream-stack.git
@@ -101,26 +101,28 @@ cd stream-stack
 ./setup.sh
 ```
 
-`setup.sh` is the primary configuration tool. It creates a local, gitignored `setup.env`, asks for missing installation-specific values and renders all actual runtime files from the public `*.example` templates.
+`setup.sh` is the primary configuration tool. It creates a local, gitignored `setup.env`, asks for missing installation-specific values and renders the actual runtime files from the public `*.example` templates.
 
 It automatically:
 
 - creates all `.env`, `config.yaml`, `config.toml`, `config.json`, PgBouncer user-list and OAuth allow-list files;
 - creates all required bind-mount directories;
-- derives the normal service hostnames from one `BASE_DOMAIN`;
+- derives normal service hostnames from one `BASE_DOMAIN`;
+- accepts full per-service hostname overrides when different names are wanted;
 - applies the same LAN IP/subnet everywhere;
 - generates strong local-only secrets where possible;
 - keeps shared credentials identical across every service that consumes them;
 - gives the two Seanime instances separate generated passwords;
 - checks active files for unresolved `CHANGE_ME_*`, `example.com` and example-LAN values;
 - runs `docker compose config --quiet`;
-- optionally starts only Gluetun, Headscale and Jackett to obtain runtime-generated keys.
+- optionally starts Gluetun, Headscale and Jackett to obtain runtime-generated keys;
+- starts Cloudflare DDNS + Nginx Proxy Manager;
+- creates/reuses the NPM administrator and Let's Encrypt certificate;
+- creates or updates the reference NPM proxy-host topology automatically.
 
 Detailed behavior is documented in **[docs/SETUP.md](docs/SETUP.md)**.
 
 ## Alternative: fill one file yourself
-
-If you prefer seeing all inputs in one place:
 
 ```bash
 cp setup.env.example setup.env
@@ -148,6 +150,38 @@ The important operator inputs are:
 
 Optional integrations such as MDBList, Gemini, AniList, Trakt and the StremThru GitHub integration can be left blank when deliberately unused.
 
+### Domains are fully configurable
+
+The reference names are only defaults.
+
+With:
+
+```text
+BASE_DOMAIN=mydomain.net
+```
+
+the wizard derives names such as:
+
+```text
+aiostreams.mydomain.net
+mfp.mydomain.net
+headscale.mydomain.net
+seanime.mydomain.net
+```
+
+Every public service also has an optional full-FQDN override:
+
+```text
+AIOSTREAMS_HOST=aio.example.org
+MEDIAFLOW_HOST=proxy.example.net
+HEADSCALE_HOST=mesh.example.com
+SEANIME_HOST=anime.example.net
+```
+
+The labels do not need to match the reference names. Hostnames may even belong to different Cloudflare zones if the supplied token can edit those zones.
+
+Those choices are propagated to application URLs, OAuth callbacks/whitelists, Headscale/Headplane, Honey, Cloudflare DDNS, Let's Encrypt and NPM. There is no hardcoded `example.com` assumption in the active configuration path.
+
 ### Values generated automatically when blank
 
 Examples include:
@@ -159,7 +193,8 @@ Examples include:
 - MediaFlow password;
 - Headplane/OAuth2 cookie secrets;
 - StremThru password/vault secret;
-- both Seanime passwords.
+- both Seanime passwords;
+- Nginx Proxy Manager admin password.
 
 The generated values are written back to local `setup.env` with mode `0600`.
 
@@ -185,7 +220,7 @@ If that bootstrap cannot be completed, the wizard lists the remaining value. Put
 
 ---
 
-# 4. Values that are synchronized automatically
+# 4. Values synchronized automatically
 
 The wizard deliberately uses a single source of truth for shared values.
 
@@ -198,17 +233,17 @@ The wizard deliberately uses a single source of truth for shared values.
 | MediaFlow password | MediaFlow + StreamViX |
 | TorBox key | AIOStreams + Comet |
 | Google OAuth client | OAuth2 Proxy and related Headplane template values |
-| Headscale hostname | Headscale, Headplane, OAuth2 Proxy, Tailscale |
+| Headscale hostname | Headscale, Headplane, OAuth2 Proxy, Tailscale and NPM |
 | Server LAN IP/subnet | Headscale, Tailscale, Honey and relevant generated config |
-| Service hostnames | derived from `BASE_DOMAIN`, with optional overrides |
+| Service hostnames | application config, Cloudflare DDNS, NPM and HTTPS certificate |
 
 You should not need to synchronize these file-by-file.
 
 ---
 
-# 5. Start the database and proxy foundation
+# 5. Database and proxy foundation
 
-After `setup.sh` completes without unresolved placeholders:
+`setup.sh` may already have started some bootstrap services. Confirm the database layer:
 
 ```bash
 docker compose --profile db up -d postgres redis pgbouncer
@@ -241,43 +276,53 @@ MicroWARP creates a fresh identity in `warp-data`; do not copy another installat
 
 # 6. Public DNS + Nginx Proxy Manager
 
-The wizard fills the Cloudflare DDNS file from `setup.env`.
+This stage is part of `./setup.sh` by default.
 
-Start:
+The wizard:
+
+1. keeps the wildcard `*.BASE_DOMAIN` DDNS behavior of the reference deployment;
+2. also adds every selected public hostname explicitly to Cloudflare DDNS;
+3. starts `cloudflare-ddns` and `npm`;
+4. creates the NPM initial admin automatically on a fresh database;
+5. authenticates to the NPM API;
+6. reuses a suitable existing Let's Encrypt certificate or requests one shared SAN certificate for all selected public hostnames;
+7. creates or updates the proxy hosts below;
+8. verifies the required domains exist in NPM.
+
+NPM is therefore **not** a manual file-by-file or host-by-host setup anymore.
+
+Reference forwarding logic:
+
+| Setup setting | Forward target | WebSocket |
+|---|---|---:|
+| `AIOSTREAMS_HOST` | `aiostreams:4444` | no |
+| `AIOMETADATA_HOST` | `aiometadata:1337` | yes |
+| `MEDIAFLOW_HOST` | `mediaflow-proxy-light:8888` | no |
+| `HEADSCALE_HOST` | `headscale:8080` | yes |
+| `PORTAINER_HOST` | `portainer:9000` | no |
+| `STREMTHRU_HOST` | `gluetun:9090` | no |
+| `SEANIME_HOST` | `gluetun:43211` | yes |
+| `SEANIME_SHARED_HOST` | `gluetun:43311` | yes |
+| `COMETNET_HOST` | `gluetun:8765` | yes |
+| `STREAMVIX_HOST` | `gluetun:7860` | no |
+
+For all managed hosts the reference security/transport logic is retained: HTTPS certificate assigned, Force SSL, HTTP/2, HSTS + subdomains and Block Common Exploits enabled; caching remains disabled; WebSocket is enabled only where required.
+
+The Headscale hostname also receives the special `/admin` and `/oauth2/` locations that route through OAuth2 Proxy to Headplane. Those locations are generated using the actual selected `HEADSCALE_HOST`.
+
+See **[docs/NPM.md](docs/NPM.md)** for the exact desired state and manual fallback.
+
+To prevent the wizard from touching NPM:
 
 ```bash
-docker compose up -d cloudflare-ddns npm
+./setup.sh --no-npm
 ```
 
-The reference DDNS behavior is wildcard DNS, `PROXIED=false`, one-minute updates and IPv6 DDNS disabled.
-
-Open NPM:
+or set:
 
 ```text
-http://SERVER_LAN_IP:81
+AUTO_CONFIGURE_NPM=false
 ```
-
-Create the new NPM admin/certificate state and follow **[docs/NPM.md](docs/NPM.md)** completely. NPM state is intentionally not shipped because it contains installation-specific certificate/account data.
-
-Important in-stack routes:
-
-| Public service | Forward target | WebSocket |
-|---|---|---:|
-| AIOStreams | `aiostreams:4444` | no |
-| AIOMetadata | `aiometadata:1337` | yes |
-| MediaFlow | `mediaflow-proxy-light:8888` | no |
-| Headscale | `headscale:8080` | yes |
-| Headplane `/admin` | `oauth2-proxy:4180` | yes |
-| Portainer | `portainer:9000` | no |
-| StremThru | `gluetun:9090` | no |
-| Seanime | `gluetun:43211` | yes |
-| Seanime Shared | `gluetun:43311` | yes |
-| CometNet | `gluetun:8765` | yes |
-| StreamViX | `gluetun:7860` | no |
-
-Use HTTPS/Let's Encrypt, Force SSL, HSTS and Block Common Exploits as documented in `docs/NPM.md`.
-
-The Headscale host has additional OAuth2 Proxy locations; copy them exactly from `docs/NPM.md`.
 
 ---
 
@@ -285,7 +330,7 @@ The Headscale host has additional OAuth2 Proxy locations; copy them exactly from
 
 If automatic runtime-key bootstrap succeeded, `setup.env` already contains the fresh Headscale API key and pre-auth key and the generated Headplane/Tailscale runtime files already contain them.
 
-Confirm the Headscale user/key state:
+Confirm the Headscale state:
 
 ```bash
 docker compose up -d headscale
@@ -309,22 +354,22 @@ Put manually generated values in `setup.env`, **not directly in multiple service
 
 The Headscale configuration uses sequential `100.64.0.0/10` allocation and MagicDNS. If the server is the first node it will normally receive `100.64.0.1`, which is the reference DNS address in the template.
 
-Create the Google OAuth client with redirect URI:
+Create the Google OAuth client using the actual selected Headscale hostname:
 
 ```text
-https://HEADSCALE_HOST/oauth2/callback
+https://<HEADSCALE_HOST>/oauth2/callback
 ```
 
 The wizard writes its client ID/secret and allowed email into OAuth2 Proxy.
 
-Start:
+Start/confirm:
 
 ```bash
 docker compose up -d headplane oauth2-proxy tailscale
 docker exec -it headscale headscale nodes list
 ```
 
-Open `https://HEADSCALE_HOST/admin`, authenticate, then approve subnet-route/exit-node capability when required.
+Open `https://<HEADSCALE_HOST>/admin`, authenticate, then approve subnet-route/exit-node capability when required.
 
 ---
 
@@ -402,9 +447,9 @@ and add **your own** torrent indexers. To mirror the reference behavior, keep ca
 
 AIOStreams runtime settings live in its own database. The repository configures the bootstrap `.env`, local credentials and integrations shared with the rest of the stack.
 
-For reproducing the reference runtime configuration, import your **sanitized AIOStreams JSON export with credentials removed**, then add the new installation's provider/indexer credentials through AIOStreams.
+For reproducing the reference runtime configuration, import your **sanitized AIOStreams JSON export with credentials removed**, then add the new installation's provider/indexer/Usenet credentials through AIOStreams.
 
-This is the preferred workflow and avoids publishing the AIOStreams DB or secrets.
+This avoids publishing the AIOStreams DB or secrets.
 
 `docs/AIOSTREAMS.md` remains the behavioral reference for the four variants and expected filtering/failover behavior.
 
@@ -449,7 +494,7 @@ Libraries/databases/download state remain local and are intentionally not publis
 
 ## Honey
 
-Honey is rendered automatically from one base domain plus `SERVER_LAN_IP`, `PROXMOX_IP` and `AMP_IP`.
+Honey is rendered automatically from the chosen public hostnames plus `SERVER_LAN_IP`, `PROXMOX_IP` and `AMP_IP`.
 
 ## Portainer
 
@@ -514,9 +559,17 @@ docker exec -it headscale headscale users list
 docker exec -it headscale headscale nodes list
 ```
 
-## HTTPS
+## NPM / HTTPS
 
-Verify public hosts for AIOStreams, AIOMetadata, MediaFlow, Headscale/Headplane, StreamViX, both Seanime instances, StremThru and CometNet.
+Inspect the locally generated non-secret desired state:
+
+```bash
+cat data/npm/stream-stack-hosts.json
+```
+
+Verify the selected public hosts for AIOStreams, AIOMetadata, MediaFlow, Headscale/Headplane, StreamViX, both Seanime instances, StremThru and CometNet.
+
+The deployment is not considered reproduced if the Headscale hostname serves Headscale on `/` but fails to send `/admin` through OAuth2 Proxy to Headplane.
 
 ## Streaming behavior
 
