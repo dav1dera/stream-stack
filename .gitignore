@@ -1,0 +1,31 @@
+# Real secrets and local copies generated from templates
+.env
+**/.env
+**/allowed-emails.txt
+**/userlist.txt
+**/config.yaml
+!**/config.yaml.example
+
+# Persistent/runtime data
+**/data/*.db
+**/data/*.sqlite
+**/data/*.sqlite-*
+**/data/*.key
+**/data/cache/
+**/data/logs/
+**/data/downloads/
+**/data/anime/
+**/data/manga/
+**/data/offline/
+**/data/state/
+**/data/workdir/
+**/data/letsencrypt/
+**/data/Indexers/
+**/data/cometnet/pools/
+**/data/dmm_temp/
+**/data/extensions/
+
+# Common runtime artifacts
+*.log
+*.pid
+*.bak
