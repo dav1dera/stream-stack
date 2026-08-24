@@ -1,0 +1,2 @@
+CREATE DATABASE comet;
+CREATE DATABASE stremthru;
