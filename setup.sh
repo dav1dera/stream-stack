@@ -21,10 +21,20 @@ for arg in "$@"; do
   esac
 done
 
+# Respect AUTO_CONFIGURE_NPM=false when setup.env already exists.
+if [[ -f "$ROOT/setup.env" ]]; then
+  npm_flag="$(awk -F= '/^[[:space:]]*AUTO_CONFIGURE_NPM=/{v=$2} END{gsub(/[[:space:]\"'"'"']/,"",v); print tolower(v)}' "$ROOT/setup.env")"
+  case "$npm_flag" in
+    false|0|no|off)
+      NO_NPM=1
+      ;;
+  esac
+fi
+
 if (( NO_NPM )); then
   python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}"
   echo
-  echo "Nginx Proxy Manager automation skipped (--no-npm)."
+  echo "Nginx Proxy Manager automation skipped."
   echo "Use docs/NPM.md for the manual equivalent."
   exit 0
 fi
