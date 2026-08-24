@@ -22,6 +22,9 @@ copy_if_missing "$ROOT/data/pgbouncer/data/userlist.txt.example" "$ROOT/data/pgb
 copy_if_missing "$ROOT/data/oauth2-proxy/allowed-emails.txt.example" "$ROOT/data/oauth2-proxy/allowed-emails.txt"
 copy_if_missing "$ROOT/data/headplane/data/config.yaml.example" "$ROOT/data/headplane/data/config.yaml"
 copy_if_missing "$ROOT/data/headscale/data/config/config.yaml.example" "$ROOT/data/headscale/data/config/config.yaml"
+copy_if_missing "$ROOT/data/honey/data/config/config.json.example" "$ROOT/data/honey/data/config/config.json"
+copy_if_missing "$ROOT/data/seanime/data/main/config/config.toml.example" "$ROOT/data/seanime/data/main/config/config.toml"
+copy_if_missing "$ROOT/data/seanime/data/shared/config/config.toml.example" "$ROOT/data/seanime/data/shared/config/config.toml"
 
 mkdir -p \
   "$ROOT/data/adguardhome/data/workdir" \
@@ -35,6 +38,7 @@ mkdir -p \
   "$ROOT/data/honey/data/config" \
   "$ROOT/data/jackett/data" \
   "$ROOT/data/npm/data" \
+  "$ROOT/data/npm/data/letsencrypt" \
   "$ROOT/data/seanime/data/main/anime" \
   "$ROOT/data/seanime/data/main/downloads" \
   "$ROOT/data/seanime/data/main/config" \
