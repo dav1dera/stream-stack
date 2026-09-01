@@ -609,3 +609,48 @@ git status --ignored
 <p align="center">
   <strong>Un solo setup, una sola sorgente di configurazione, stessa logica dello stack di riferimento.</strong>
 </p>
+
+---
+
+# ACL per copie private che tracciano i dati runtime
+
+Questa sezione riguarda le **copie private/operative** di Stream Stack che scelgono deliberatamente di versionare anche `data/` per poter ripristinare rapidamente lo stato del deployment. La repository pubblica sanitizzata può continuare a escludere database, cache, token e altri dati runtime.
+
+I bind mount Docker possono contenere file creati come `root` o con UID/GID specifici del servizio. In questo scenario **non usare `chown -R` sull'intera repository**: cambiare ricorsivamente il proprietario può rompere servizi che si aspettano ownership specifiche. È preferibile usare le ACL POSIX per concedere all'utente che gestisce Git accesso ai file senza modificare il proprietario usato dai container.
+
+Su Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install -y acl
+
+cd ~/stream-stack
+DEPLOY_USER="${SUDO_USER:-$USER}"
+
+# Accesso ai file e alle directory già esistenti, senza cambiare owner/group.
+sudo setfacl -R -m "u:${DEPLOY_USER}:rwX" data
+
+# ACL di default sulle directory: i nuovi oggetti ereditano l'accesso per l'utente Git.
+sudo find data -type d \
+  -exec setfacl -m "u:${DEPLOY_USER}:rwx,d:u:${DEPLOY_USER}:rwx,d:m:rwx" {} +
+
+# Evita che Git segnali come modifiche i soli cambi dei permission bit Unix.
+git config core.fileMode false
+```
+
+L'ownership originale rimane invariata. Un file può quindi continuare a essere, per esempio, `root:root` o appartenere all'UID interno del container, mentre l'utente del deployment dispone di una voce ACL aggiuntiva.
+
+Per verificare:
+
+```bash
+getfacl data/adguardhome/data/confdir/AdGuardHome.yaml
+```
+
+Nell'output deve comparire una voce simile a:
+
+```text
+user:pi:rw-
+```
+
+> [!NOTE]
+> Le ACL di default coprono la normale creazione di file e directory, ma un'applicazione può creare esplicitamente file con permessi molto restrittivi (per esempio `0600`) o eseguire successivamente un `chmod`, rendendo inefficace l'ACL ereditata. Se uno specifico container continua a farlo, si può aggiungere opzionalmente un piccolo **watcher `inotify` gestito da systemd** che riapplica l'ACL ai file nuovi o riscritti. Il watcher non è incluso qui perché nella maggior parte dei deployment non è necessario e va introdotto solo per i servizi che sovrascrivono effettivamente le ACL.
