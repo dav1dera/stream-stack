@@ -1,26 +1,31 @@
 services:
+  # 🔒 Tailscale multinode wireguard solution
   tailscale:
     image: tailscale/tailscale:latest
-    container_name: tailscale
-    env_file: [./data/tailscale/.env]
+    env_file:
+      - ./data/tailscale/.env
     volumes:
       - ./data/tailscale/data/state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [net_admin, net_raw]
-    restart: unless-stopped
-    network_mode: host
+    container_name: tailscale
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9002/healthz"]
       interval: 1m
       timeout: 5s
       retries: 3
       start_period: 10s
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - net_raw
+    restart: unless-stopped
+    network_mode: "host"
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, headscale]
-
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
+  
+  # 🖥️ Portainer - docker manager #
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
@@ -28,7 +33,8 @@ services:
     volumes:
       - portainer-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-    env_file: [./data/portainer/.env]
+    env_file:
+      - ./data/portainer/.env
     ports:
       - "9443:9443"
       - "9000:9000"
@@ -36,38 +42,45 @@ services:
       default:
         ipv4_address: 172.18.0.2
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
-  adguardhome:
-    image: adguard/adguardhome:latest
-    container_name: adguardhome
+  # 📢 AdGuardHome adblocker
+  adguardhome:                      
+    image: adguard/adguardhome:latest  
+    container_name: adguardhome  
     restart: unless-stopped
-    volumes:
-      - ./data/adguardhome/data/workdir:/opt/adguardhome/work
-      - ./data/adguardhome/data/confdir:/opt/adguardhome/conf
+    volumes:  
+      - ./data/adguardhome/data/workdir:/opt/adguardhome/work  
+      - ./data/adguardhome/data/confdir:/opt/adguardhome/conf 
       - ./data/npm/data/letsencrypt:/etc/letsencrypt
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "90:90"
-      - "3010:3000"
+      - 53:53/tcp     # ADGH local DNS address
+      - 53:53/udp     # ADGH local DNS address
+      - 90:90             # ADGH web interface
+      - 3010:3010         # ADGH 1st time setup
+    # - 6443:6443/tcp     # ADGH DOH
+    # - 6443:6443/udp     # ADGH DOH
+    # - 853:853/tcp       # ADGH DOT
+    # - 853:853/udp       # ADGH QUIC
     networks:
-      default:
-        ipv4_address: 172.18.0.3
-      vpn-net:
-        ipv4_address: 172.19.0.3
+       default:
+         ipv4_address: 172.18.0.3
+       vpn-net:
+         ipv4_address: 172.19.0.3
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+ # 🕵️‍♂️ DNScrypt-Proxy  
   dnscrypt-proxy:
     image: klutchell/dnscrypt-proxy:latest
     container_name: dnscrypt-proxy
     restart: unless-stopped
     volumes:
       - ./data/dnscrypt-proxy/data:/config
-    env_file: [./data/dnscrypt-proxy/.env]
+    env_file:
+      - ./data/dnscrypt-proxy/.env
     healthcheck:
       test: ["CMD", "dnscrypt-proxy", "--version"]
       interval: 30s
@@ -77,14 +90,15 @@ services:
       default:
         ipv4_address: 172.18.0.4
     ports:
-      - "5353:5353/tcp"
-      - "5353:5353/udp"
-      - "8280:8280"
-      - "3335:3335"
+      - 5353:5353/tcp
+      - 5353:5353/udp
+      - 8280:8280 #web-gui
+      - 3335:3335 #doh server
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, headscale]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
 
+  # 🔒 Headscale > selfhosted tailscale server
   headscale:
     image: headscale/headscale:stable
     container_name: headscale
@@ -93,24 +107,25 @@ services:
       - ./data/headscale/data/lib:/var/lib/headscale
       - ./data/headscale/data/run:/var/run/headscale
     ports:
-      - "8080:8080"
+      - '8080:8080'
     command: serve
     healthcheck:
-      test: ["CMD", "headscale", "health"]
+        test: ["CMD", "headscale", "health"]
     restart: unless-stopped
     networks:
       default:
         ipv4_address: 172.18.0.5
     labels:
-      - me.tale.headplane.target=headscale
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, headscale]
+      - "me.tale.headplane.target=headscale"
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
 
+  # 🔒 Headplane > Headscale UI
   headplane:
     image: ghcr.io/tale/headplane:latest
     container_name: headplane
     ports:
-      - "3000:3000"
+      - '3000:3000'
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/bin/hp_healthcheck"]
@@ -119,10 +134,10 @@ services:
       start_period: 5s
       retries: 3
     volumes:
-      - ./data/headplane/data/config.yaml:/etc/headplane/config.yaml
-      - ./data/headplane/data:/var/lib/headplane
-      - ./data/headscale/data/config/config.yaml:/etc/headscale/config.yaml
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    - ./data/headplane/data/config.yaml:/etc/headplane/config.yaml
+    - ./data/headplane/data:/var/lib/headplane
+    - ./data/headscale/data/config/config.yaml:/etc/headscale/config.yaml
+    - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       headscale:
         condition: service_healthy
@@ -130,9 +145,10 @@ services:
       default:
         ipv4_address: 172.18.0.6
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, headscale]
-
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
+ 
+  # 🌐 Nginx Proxy Manager - proxy & certificates
   npm:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx-proxy-manager
@@ -141,7 +157,8 @@ services:
       - "80:80"
       - "81:81"
       - "443:443"
-    env_file: [./data/npm/.env]
+    env_file:
+      - ./data/npm/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,9 +173,10 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.4
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
-
+ 
+  # ☁️ Cloudflare DDNS - automatically update dns
   cloudflare-ddns:
     image: favonia/cloudflare-ddns:latest
     container_name: cloudflare-ddns
@@ -167,21 +185,24 @@ services:
     read_only: true
     cap_drop: [all]
     security_opt: [no-new-privileges:true]
-    env_file: [./data/cloudflare-ddns/.env]
+    env_file:
+      - ./data/cloudflare-ddns/.env
     networks:
       default:
         ipv4_address: 172.18.0.8
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+  # 🗂️ AIOMetadata - Metadata manager
   aiometadata:
     image: ghcr.io/cedya77/aiometadata:latest
     container_name: aiometadata
     restart: unless-stopped
     ports:
-      - "1337:1337"
-    env_file: [./data/aiometadata/.env]
+      - "1337:1337"   
+    env_file:
+      - ./data/aiometadata/.env
     volumes:
       - ./data/aiometadata/data:/app/addon/data
     depends_on:
@@ -193,14 +214,16 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.5
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+  # 🔄 Mediaflow Proxy Light- stream proxy
   mediaflow-proxy-light:
     image: ghcr.io/mhdzumair/mediaflow-proxy-light:latest
     container_name: mediaflow-proxy-light
     restart: unless-stopped
-    env_file: [./data/mediaflow-proxy-light/.env]
+    env_file:
+      - ./data/mediaflow-proxy-light/.env
     ports:
       - "8888:8888"
     networks:
@@ -209,19 +232,21 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.6
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+  # 🎥 AIOStreams - Streaming AIO
   aiostreams:
-    image: ghcr.io/viren070/aiostreams:latest
+    image: ghcr.io/viren070/aiostreams:nightly
     container_name: aiostreams
     restart: unless-stopped
     ports:
       - "4444:4444"
-    env_file: [./data/aiostreams/.env]
+    env_file:
+      - ./data/aiostreams/.env
     depends_on:
       gluetun:
-        condition: service_healthy
+        condition: service_healthy 
     volumes:
       - ./data/aiostreams/data:/app/data
     networks:
@@ -230,14 +255,16 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.7
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
-
+  
+  # 🗄️ PgBouncer - PostgreSQL connection pooler
   pgbouncer:
-    image: edoburu/pgbouncer:latest
     container_name: pgbouncer
-    restart: unless-stopped
-    env_file: [./data/pgbouncer/.env]
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped 
+    env_file:
+      - ./data/pgbouncer/.env
     volumes:
       - ./data/pgbouncer/data/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./data/pgbouncer/data/userlist.txt:/etc/pgbouncer/userlist.txt
@@ -245,22 +272,24 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "postgres"]
+      test: ['CMD', 'pg_isready', '-h', 'postgres']  
     networks:
       default:
         ipv4_address: 172.18.0.12
       vpn-net:
         ipv4_address: 172.19.0.8
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun, db]
-
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun,db]
+    
+  # 🗄️ PostgreSQL - Main database
   postgres:
     image: postgres:18-alpine
     container_name: postgres
     restart: unless-stopped
     shm_size: 2G
-    env_file: [./data/postgres/.env]
+    env_file:
+      - ./data/postgres/.env
     volumes:
       - ./data/postgres/init:/docker-entrypoint-initdb.d
       - pgdata:/var/lib/postgresql/data
@@ -276,9 +305,10 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.9
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun, db]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun,db]
 
+  # 🗄️ Redis - Cache
   redis:
     image: redis:latest
     container_name: redis
@@ -292,7 +322,7 @@ services:
       timeout: 5s
       retries: 5
     logging:
-      driver: json-file
+      driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
@@ -302,23 +332,26 @@ services:
       vpn-net:
         ipv4_address: 172.19.0.10
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun, db]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun,db]
 
+  # # ⏱️ Watchtower - Automatically update containers
   watchtower:
     image: nickfedor/watchtower:latest
     container_name: watchtower
-    restart: unless-stopped
+    restart: unless-stopped 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    env_file: [./data/watchtower/.env]
+    env_file:
+      - ./data/watchtower/.env
     networks:
       default:
         ipv4_address: 172.18.0.15
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
-
+    
+  # 🍯 Honey - Dashboarde
   honey:
     image: ghcr.io/dani3l0/honey:latest
     container_name: honey
@@ -331,32 +364,40 @@ services:
       default:
         ipv4_address: 172.18.0.16
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+  #  teamSpeak 6 - Voice communication server
   teamspeak:
     image: teamspeaksystems/teamspeak6-server:latest
     container_name: teamspeak
     user: "9987:9987"
     restart: unless-stopped
     ports:
-      - "9987:9987/udp"
-      - "30033:30033/tcp"
-    env_file: [./data/teamspeak/.env]
+      - "9987:9987/udp"    # Default voice port
+      - "30033:30033/tcp"  # File transfer port/chat
+      # - "10022:10022/tcp" # (Optional) ServerQuery SSH port
+      # - "10080:10080/tcp"  # (Optional) WebQuery port
+    env_file:
+      - ./data/teamspeak/.env
     volumes:
       - teamspeak-data:/var/tsserver
     networks:
       default:
         ipv4_address: 172.18.0.17
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+  
+  # ☁️ Cloudflare WARP - proxy
   microwarp:
     image: ghcr.io/ccbkkb/microwarp:latest
     container_name: warp
     restart: always
-    cap_add: [NET_ADMIN, SYS_MODULE]
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.all.disable_ipv6=0
@@ -368,50 +409,146 @@ services:
       default:
         ipv4_address: 172.18.0.18
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+ # ☁️ Cloudflare WARP - proxy
   gost:
     image: gogost/gost:latest
     container_name: gost
     restart: unless-stopped
     command:
-      - "-L=http://:8082"
-      - "-F=socks5://warp:1080"
-    depends_on: [microwarp]
+    - "-L=http://:8082"
+    - "-F=socks5://warp:1080"
+    depends_on:
+    - microwarp
     networks:
       default:
         ipv4_address: 172.18.0.19
       vpn-net:
         ipv4_address: 172.19.0.11
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
+     # 🔐 OAuth2 Proxy - Headplane authentication
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
     container_name: oauth2-proxy
     restart: unless-stopped
-    env_file: [./data/oauth2-proxy/.env]
+    env_file:
+      - ./data/oauth2-proxy/.env
     volumes:
       - ./data/oauth2-proxy/allowed-emails.txt:/etc/oauth2-proxy/allowed-emails.txt:ro
-    depends_on: [headplane]
+    depends_on:
+      - headplane
     networks:
       default:
-        ipv4_address: 172.18.0.20
+       ipv4_address: 172.18.0.20
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, headscale]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
 
+    # 🎬 EasyProxy - stream proxy
+  easyproxy:
+    image: ghcr.io/realbestia1/easyproxy:latest
+    container_name: easyproxy
+    restart: unless-stopped
+    ports:
+      - "8760:8760"
+    env_file:
+      - ./data/easyproxy/.env
+    depends_on:
+     gluetun:
+        condition: service_healthy
+    volumes:
+      - ./data/easyproxy/data:/data
+    networks:
+      default:
+        ipv4_address: 172.18.0.21
+      vpn-net:
+        ipv4_address: 172.19.0.12
+    profiles: [all]
+
+  # 📺 StreamVix - Addon
+  streamvix:
+    image: qwertyuiop8899/streamvix:latest
+    container_name: streamvix
+    ports:
+      - "7860:7860"
+    env_file:
+      - ./data/streamvix/.env
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.18.0.22
+      vpn-net:
+        ipv4_address: 172.19.0.13
+    labels:
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
+
+  tvvoo:
+    image: qwertyuiop8899/tvvoo:latest
+    container_name: tvvoo
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./data/tvvoo/.env
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 172.18.0.23
+      vpn-net:
+        ipv4_address: 172.19.0.14
+    labels:
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
+
+  aiomanager:
+    image: ghcr.io/sonicx161/aiomanager:beta
+    container_name: aiomanager
+    restart: unless-stopped
+    env_file:
+      - ./data/aiomanager/.env 
+    ports:
+      - "1610:1610"
+    volumes:
+      - ./data/aiomanager/data:/app/data
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "server/healthcheck.js"]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      default:
+       ipv4_address: 172.18.0.24
+    labels:
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,headscale]
+
+  # 🩺 Deunhealth - Automatically restart unhealthy containers
   deunhealth:
     image: qmcgaw/deunhealth:latest
     container_name: deunhealth
-    network_mode: none
-    env_file: [./data/deunhealth/.env]
+    network_mode: "none"
+    env_file:
+      - ./data/deunhealth/.env
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
+
+##################################################  VPN   ################################################## 
+
+  # 🛡️ Gluetun - VPN/Proxy container
   gluetun:
     image: qmcgaw/gluetun:latest
     container_name: gluetun
@@ -419,56 +556,48 @@ services:
       - "2020:2020"
       - "9090:9090"
       - "9117:9117"
-      - "7860:7860"
     healthcheck:
-      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]          
       interval: 5s
       timeout: 5s
       retries: 1
       start_period: 40s
     restart: always
-    env_file: [./data/gluetun/.env]
-    cap_add: [NET_ADMIN]
+    env_file:
+      - ./data/gluetun/.env
+    cap_add:
+      - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    extra_hosts:
-      - "pgbouncer:172.19.0.8"
+    extra_hosts: 
+      - "pgbouncer:172.19.0.8"                  
       - "postgres:172.19.0.9"
       - "redis:172.19.0.10"
     networks:
       vpn-net:
         ipv4_address: 172.19.0.2
-    profiles: [all, gluetun]
+    profiles: [all,gluetun]
     labels:
-      - com.centurylinklabs.watchtower.enable=false
+      - "com.centurylinklabs.watchtower.enable=false"
 
-  streamvix:
-    image: qwertyuiop8899/streamvix:latest
-    container_name: streamvix
-    env_file: [./data/streamvix/.env]
-    depends_on:
-      gluetun:
-        condition: service_healthy
-    restart: unless-stopped
-    network_mode: service:gluetun
-    labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun]
-
+   # 💫 Comet - Addon
   comet:
     image: g0ldyy/comet:latest
     container_name: comet
     restart: unless-stopped
     init: true
     read_only: true
-    security_opt: [no-new-privileges:true]
+    security_opt:
+      - no-new-privileges:true
     user: "1000:1000"
-    cap_drop: [ALL]
+    cap_drop:
+      - ALL
     tmpfs:
       - /tmp:size=64m,mode=1777
     volumes:
       - ./data/comet/data:/app/data
-    env_file: [./data/comet/.env]
+    env_file:
+      - ./data/comet/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -476,25 +605,33 @@ services:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
-    network_mode: service:gluetun
+    network_mode: "service:gluetun"
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all, gluetun]
 
+
+  # 💫 CometNet - P2P network service
   cometnet:
     image: g0ldyy/comet:latest
     container_name: cometnet
     restart: unless-stopped
     init: true
     read_only: true
-    security_opt: [no-new-privileges:true]
+    security_opt:
+      - no-new-privileges:true
     user: "1000:1000"
-    cap_drop: [ALL]
+    cap_drop:
+      - ALL
     tmpfs:
       - /tmp:size=64m,mode=1777
-    entrypoint: [python, -m, comet.cometnet.standalone]
-    network_mode: service:gluetun
-    env_file: [./data/cometnet/.env]
+    entrypoint:
+      - python
+      - -m
+      - comet.cometnet.standalone
+    network_mode: "service:gluetun"
+    env_file:
+      - ./data/cometnet/.env
     volumes:
       - ./data/comet/data:/app/data
     depends_on:
@@ -517,43 +654,48 @@ services:
       retries: 3
       start_period: 30s
     labels:
-      - deunhealth.restart.on.unhealthy=true
+      - "deunhealth.restart.on.unhealthy=true"
     profiles: [all, gluetun]
-
+  
+  # 🔍 StremThru - Scraper
   stremthru:
     image: muniftanjim/stremthru:latest
     container_name: stremthru
     restart: unless-stopped
-    env_file: [./data/stremthru/.env]
+    env_file:
+      - ./data/stremthru/.env
     depends_on:
       postgres:
         condition: service_healthy
       gluetun:
-        condition: service_healthy
+          condition: service_healthy
       redis:
-        condition: service_healthy
+          condition: service_healthy
       pgbouncer:
         condition: service_healthy
-    network_mode: service:gluetun
+    network_mode: "service:gluetun"
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
 
+  # 🔍 Jackett - Torrent indexer/scraper
   jackett:
     image: lscr.io/linuxserver/jackett:latest
     container_name: jackett
     restart: unless-stopped
-    env_file: [./data/jackett/.env]
+    env_file:
+      - ./data/jackett/.env
     volumes:
       - ./data/jackett/data:/config
     depends_on:
       gluetun:
         condition: service_healthy
-    network_mode: service:gluetun
+    network_mode: "service:gluetun"
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
 
+  # 🎬 Seanime - User main
   seanime:
     image: umagistr/seanime:latest
     container_name: seanime
@@ -572,11 +714,12 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
-    network_mode: service:gluetun
+    network_mode: "service:gluetun"
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
 
+  # 🎬 Seanime - User friends
   seanime-shared:
     image: umagistr/seanime:latest
     container_name: seanime-shared
@@ -595,28 +738,33 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
-    network_mode: service:gluetun
+    network_mode: "service:gluetun"
     labels:
-      - deunhealth.restart.on.unhealthy=true
-    profiles: [all, gluetun]
+      - "deunhealth.restart.on.unhealthy=true"
+    profiles: [all,gluetun]
 
+
+# 📦 volumes    
 volumes:
   portainer-data:
   pgdata:
   redis-data:
   teamspeak-data:
   warp-data:
-
+  
+# 🌐 networks
 networks:
   default:
-    name: net
+    name: net 
     driver: bridge
     ipam:
       config:
         - subnet: 172.18.0.0/24
   vpn-net:
-    name: vpn-net
+    name: vpn-net  
     driver: bridge
     ipam:
       config:
         - subnet: 172.19.0.0/24
+
+
