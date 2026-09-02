@@ -1,0 +1,21 @@
+name: Validate stream-stack
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python syntax
+        run: |
+          python3 -m py_compile scripts/*.py windows-wizard/*.py
+      - name: Validate current topology
+        run: python3 scripts/validate_stack.py
+      - name: Bootstrap public templates
+        run: bash scripts/bootstrap.sh
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
