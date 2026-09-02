@@ -1,8 +1,18 @@
-# Local-LAN additions loaded automatically by Docker Compose alongside docker-compose.yml.
-# Services using `network_mode: service:gluetun` must publish their host ports on
-# the Gluetun service itself. These two ports make both Seanime instances
-# reachable directly from the LAN after the Windows wizard finishes.
+# Quick-setup compatibility overrides loaded automatically by Docker Compose.
+# They preserve the reference topology while fixing fresh-install usability.
 services:
+  # AdGuard's first-run wizard listens on container port 3000. The reference
+  # deployment is already configured on :90, but a brand-new installation needs
+  # this mapping until the wizard is completed.
+  adguardhome:
+    ports: !override
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "90:90"
+      - "3010:3000"
+
+  # Services sharing Gluetun's network namespace expose their LAN ports here.
+  # This also lets the Windows wizard verify both Seanime instances directly.
   gluetun:
     ports:
       - "43211:43211"
