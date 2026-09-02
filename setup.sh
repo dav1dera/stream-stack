@@ -36,7 +36,7 @@ if (( ! NON_INTERACTIVE )); then
   python3 "$ROOT/scripts/domain_setup.py"
 fi
 
-# Completa i nuovi hostname/segreti introdotti dalla topologia corrente
+# Completa hostname/segreti introdotti dalla topologia corrente
 # (EasyProxy, TvVoo e AIOManager) prima del renderer generale.
 python3 "$ROOT/scripts/current_defaults.py"
 
@@ -62,7 +62,7 @@ python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}" | sed \
 
 echo
 echo "Applicazione configurazione Nginx Proxy Manager..."
-python3 "$ROOT/scripts/npm_apply.py"
+python3 "$ROOT/scripts/npm_current.py"
 
 echo
 echo "Configurazione one-shot completata."
