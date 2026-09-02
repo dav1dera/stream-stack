@@ -25,12 +25,15 @@ copy_if_missing "$ROOT/data/headscale/data/config/config.yaml.example" "$ROOT/da
 copy_if_missing "$ROOT/data/honey/data/config/config.json.example" "$ROOT/data/honey/data/config/config.json"
 copy_if_missing "$ROOT/data/seanime/data/main/config/config.toml.example" "$ROOT/data/seanime/data/main/config/config.toml"
 copy_if_missing "$ROOT/data/seanime/data/shared/config/config.toml.example" "$ROOT/data/seanime/data/shared/config/config.toml"
+copy_if_missing "$ROOT/data/easyproxy/data/config.json.example" "$ROOT/data/easyproxy/data/config.json"
 
 mkdir -p \
   "$ROOT/data/adguardhome/data/workdir" \
   "$ROOT/data/adguardhome/data/confdir" \
   "$ROOT/data/aiometadata/data" \
   "$ROOT/data/aiostreams/data" \
+  "$ROOT/data/aiomanager/data" \
+  "$ROOT/data/easyproxy/data/recordings" \
   "$ROOT/data/comet/data" \
   "$ROOT/data/headplane/data" \
   "$ROOT/data/headscale/data/lib" \
@@ -48,5 +51,5 @@ mkdir -p \
   "$ROOT/data/tailscale/data/state"
 
 echo
-echo "Templates copied. Recommended: run ./setup.sh to configure the entire stack from one setup.env file."
-echo "Manual check: grep -RIn --exclude='*.example' 'CHANGE_ME_' \"$ROOT/data\""
+echo "Template generati. Consigliato: usa ./setup.sh per configurare tutto da setup.env."
+echo "Controllo manuale: grep -RIn --exclude='*.example' 'CHANGE_ME_' \"$ROOT/data\""
