@@ -7,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
-OVERRIDE = ROOT / "docker-compose.override.yml"
 
 EXPECTED_SERVICES = {
     "tailscale", "portainer", "adguardhome", "dnscrypt-proxy", "headscale",
@@ -19,45 +18,45 @@ EXPECTED_SERVICES = {
 }
 
 REQUIRED_FILES = {
-    "setup.sh",
-    "setup.env.example",
-    "scripts/bootstrap.sh",
-    "scripts/configure.py",
-    "scripts/current_defaults.py",
-    "scripts/npm_apply.py",
-    "scripts/npm_current.py",
-    "data/easyproxy/.env.example",
-    "data/easyproxy/data/config.json.example",
-    "data/tvvoo/.env.example",
-    "data/aiomanager/.env.example",
-    "data/aiostreams/.env.example",
-    "data/pgbouncer/data/pgbouncer.ini",
-    "data/pgbouncer/data/userlist.txt.example",
-    "data/postgres/init/01-databases.sql",
-    "windows-wizard/Start-Wizard.cmd",
-    "windows-wizard/run.ps1",
+    "setup.sh", "setup.env.example", "docker-compose.override.yml",
+    "scripts/bootstrap.sh", "scripts/configure.py", "scripts/current_defaults.py",
+    "scripts/npm_apply.py", "scripts/npm_current.py",
+    "data/easyproxy/.env.example", "data/easyproxy/data/config.json.example",
+    "data/tvvoo/.env.example", "data/aiomanager/.env.example",
+    "data/aiostreams/.env.example", "data/pgbouncer/data/pgbouncer.ini",
+    "data/pgbouncer/data/userlist.txt.example", "data/postgres/init/01-databases.sql",
+    "windows-wizard/Start-Wizard.cmd", "windows-wizard/run.ps1",
     "windows-wizard/local_ready.py",
 }
 
 REQUIRED_SNIPPETS = {
     "data/aiostreams/.env.example": [
-        "REQUEST_URL_MAPPINGS=",
-        "http://streamvix:7860",
-        "http://tvvoo:5000",
-        "http://aiomanager:1610",
-        "MAX_VARIANTS=30",
-        "MAX_ADDONS=20",
+        "REQUEST_URL_MAPPINGS=", "http://streamvix:7860", "http://tvvoo:5000",
+        "http://aiomanager:1610", "MAX_VARIANTS=30", "MAX_ADDONS=20",
     ],
-    "data/tvvoo/.env.example": ["PROXY_BASE_URL=https://easyproxy.example.com", "CHANGE_ME_EASYPROXY_PASSWORD"],
-    "data/streamvix/.env.example": ["MFP_URL=https://easyproxy.example.com/", "PROXY=socks5h://gluetun:1081"],
-    "data/aiomanager/.env.example": ["DB_TYPE=postgres", "pgbouncer:6432/aiomanager", "CHANGE_ME_AIOMANAGER_ENCRYPTION_KEY"],
-    "data/pgbouncer/data/pgbouncer.ini": ["aiomanager = host=postgres", "comet = host=postgres", "stremthru = host=postgres"],
+    "data/tvvoo/.env.example": [
+        "PROXY_BASE_URL=https://CHANGE_ME_EASYPROXY_HOST",
+        "CHANGE_ME_EASYPROXY_PASSWORD",
+    ],
+    "data/streamvix/.env.example": [
+        "MFP_URL=https://CHANGE_ME_EASYPROXY_HOST/",
+        "PROXY=socks5h://gluetun:1081",
+    ],
+    "data/aiomanager/.env.example": [
+        "DB_TYPE=postgres", "pgbouncer:6432/aiomanager",
+        "CHANGE_ME_AIOMANAGER_ENCRYPTION_KEY",
+    ],
+    "data/pgbouncer/data/pgbouncer.ini": [
+        "aiomanager = host=postgres", "comet = host=postgres",
+        "stremthru = host=postgres",
+    ],
     "docker-compose.override.yml": ["3010:3000", "43211:43211", "43311:43311"],
 }
 
+# Constructed in pieces so the validator does not flag its own test literals.
 FORBIDDEN = (
-    "self-stremiopi.org",
-    "192.168.178.11",
+    "self-" + "stremiopi.org",
+    "192.168." + "178.11",
 )
 
 
@@ -105,12 +104,11 @@ def main() -> int:
             if snippet not in text:
                 problems.append(f"{rel}: manca `{snippet}`")
 
-    # Scan only public templates/scripts/docs, never generated runtime state.
     scan_paths = [ROOT / "README.md", ROOT / "setup.env.example", ROOT / "scripts", ROOT / "windows-wizard"]
     for base in scan_paths:
         paths = [base] if base.is_file() else list(base.rglob("*")) if base.exists() else []
         for path in paths:
-            if not path.is_file():
+            if not path.is_file() or path.resolve() == Path(__file__).resolve():
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
