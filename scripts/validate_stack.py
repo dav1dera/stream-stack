@@ -20,18 +20,19 @@ EXPECTED_SERVICES = {
 REQUIRED_FILES = {
     "setup.sh", "setup.env.example", "docker-compose.override.yml",
     "scripts/bootstrap.sh", "scripts/configure.py", "scripts/current_defaults.py",
-    "scripts/npm_apply.py", "scripts/npm_current.py",
+    "scripts/npm_apply.py", "scripts/npm_current.py", "scripts/acceptance.py",
     "data/easyproxy/.env.example", "data/easyproxy/data/config.json.example",
     "data/tvvoo/.env.example", "data/aiomanager/.env.example",
     "data/aiostreams/.env.example", "data/comet/.env.example",
     "data/pgbouncer/data/pgbouncer.ini", "data/pgbouncer/data/userlist.txt.example",
     "data/postgres/postgresql.conf", "data/postgres/init/01-databases.sql",
     "windows-wizard/Start-Wizard.cmd", "windows-wizard/run.ps1",
-    "windows-wizard/local_ready.py",
+    "windows-wizard/launcher.py", "windows-wizard/local_ready.py",
 }
 
 REQUIRED_SNIPPETS = {
     "docker-compose.yml": ["ALLOW_NO_AUTH=1"],
+    "setup.env.example": ["PUBLIC_READY_TIMEOUT=600", "STRICT_ACCEPTANCE=true"],
     "data/aiostreams/.env.example": [
         "REQUEST_URL_MAPPINGS=", "http://streamvix:7860", "http://tvvoo:5000",
         "http://aiomanager:1610", "MAX_VARIANTS=30", "MAX_ADDONS=20",
@@ -68,6 +69,18 @@ REQUIRED_SNIPPETS = {
         "ALTER ROLE comet SET synchronous_commit = off;",
         "ALTER ROLE comet SET work_mem = '16MB';",
         "ALTER ROLE stremthru SET synchronous_commit = off;",
+    ],
+    "scripts/npm_current.py": [
+        "wait_public_dns", "cloudflare-dns.com/dns-query", "PUBLIC_READY_TIMEOUT",
+        "TCP 80", "TCP 443",
+    ],
+    "scripts/acceptance.py": [
+        "ACCEPTANCE OK", "docker compose", "https_check", "HEADSCALE_HOST",
+        "PUBLIC_READY_TIMEOUT",
+    ],
+    "windows-wizard/launcher.py": [
+        "STRICT_ACCEPTANCE", "ROUTER_PORTS_READY", "scripts/acceptance.py",
+        "Acceptance test end-to-end",
     ],
     "docker-compose.override.yml": ["43211:43211", "43311:43311"],
 }
@@ -148,6 +161,7 @@ def main() -> int:
     print("- template strutturali presenti")
     print("- tuning Comet/PostgreSQL/PgBouncer allineato")
     print("- MicroWARP configurato per SOCKS interno senza auth")
+    print("- readiness one-click: wait DNS + strict acceptance presenti")
     print("- mapping EasyProxy/TvVoo/AIOManager presenti")
     print("- override fresh-install Seanime presente")
     print("- nessun riferimento privato noto nei file di setup")

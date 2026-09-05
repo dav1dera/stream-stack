@@ -2,6 +2,11 @@
 """Adatta l'automazione NPM alla topologia corrente di streams-aio."""
 from __future__ import annotations
 
+import json
+import time
+import urllib.parse
+import urllib.request
+
 import npm_apply as base
 
 # setting, target Docker, porta, websocket
@@ -49,6 +54,7 @@ LAN_ONLY = {
 }
 
 _original_proxy_payload = base.proxy_payload
+_original_find_or_create_certificate = base.find_or_create_certificate
 
 
 def proxy_payload(item, cert_id):
@@ -68,7 +74,74 @@ def proxy_payload(item, cert_id):
     return payload
 
 
+def _doh_addresses(hostname: str) -> list[str]:
+    addresses: list[str] = []
+    for record_type in ("A", "AAAA"):
+        query = urllib.parse.urlencode({"name": hostname, "type": record_type})
+        req = urllib.request.Request(
+            f"https://cloudflare-dns.com/dns-query?{query}",
+            headers={"Accept": "application/dns-json", "User-Agent": "stream-stack-setup/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=8) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            continue
+        if data.get("Status") != 0:
+            continue
+        for answer in data.get("Answer") or []:
+            value = str(answer.get("data") or "").strip()
+            if value:
+                addresses.append(value)
+    return addresses
+
+
+def wait_public_dns(hosts) -> None:
+    """Wait for Cloudflare's public resolver to see every hostname before HTTP-01."""
+    values = base.parse_env(base.SETUP_FILE)
+    try:
+        timeout = int(values.get("PUBLIC_READY_TIMEOUT", "600") or "600")
+    except ValueError:
+        timeout = 600
+    timeout = max(30, min(timeout, 3600))
+    deadline = time.time() + timeout
+    pending = {item["hostname"] for item in hosts}
+    last_log = 0.0
+
+    base.log(f"waiting for public DNS propagation (up to {timeout}s)...")
+    while pending and time.time() < deadline:
+        resolved_now = {hostname for hostname in pending if _doh_addresses(hostname)}
+        pending -= resolved_now
+        now = time.time()
+        if resolved_now:
+            for hostname in sorted(resolved_now):
+                base.log(f"public DNS ready: {hostname}")
+        if pending and now - last_log >= 20:
+            base.log("still waiting for public DNS: " + ", ".join(sorted(pending)))
+            last_log = now
+        if pending:
+            time.sleep(5)
+
+    if pending:
+        raise RuntimeError(
+            "Public DNS did not become ready before the timeout: " + ", ".join(sorted(pending))
+        )
+
+
+def find_or_create_certificate(token, hosts, email):
+    wait_public_dns(hosts)
+    try:
+        return _original_find_or_create_certificate(token, hosts, email)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"{exc}\n"
+            "Automatic HTTPS failed. For a fresh install, forward TCP 80 and TCP 443 on the router "
+            "to SERVER_LAN_IP before running the wizard; HTTP-01 needs TCP 80 during certificate issuance."
+        ) from exc
+
+
 base.proxy_payload = proxy_payload
+base.find_or_create_certificate = find_or_create_certificate
 
 if __name__ == "__main__":
     raise SystemExit(base.main())

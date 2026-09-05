@@ -10,16 +10,35 @@ cd stream-stack\windows-wizard
 .\run.ps1
 ```
 
-The GUI runs on Windows and configures the headless Ubuntu Docker server remotely over SSH/SFTP. It uses the same `setup.sh`, NPM automation and templates as the CLI installer, so the stack logic remains identical.
+Before a fresh public install, forward on the router:
 
-With **Avvia stack completo** enabled (the default), the wizard does not stop after writing configuration files: it starts the full Compose profile and the final page probes the server's published ports from the Windows PC. The completion screen shows `OK/KO`, the local `http(s)://SERVER_LAN_IP:PORT` address and an **Apri** button for each main web service. This includes both Seanime instances on ports `43211` and `43311`.
+```text
+TCP 80  -> SERVER_LAN_IP:80
+TCP 443 -> SERVER_LAN_IP:443
+```
 
-AdGuard Home is no longer deployed by this Compose; LAN DNS is expected to be provided by a separate resolver/AdGuard instance. Jackett and other applications can remain locally reachable while still requiring their application-specific first-run configuration.
+The GUI configures the headless Ubuntu Docker server over SSH/SFTP and uses the same `setup.sh`, NPM automation and templates as the CLI installer.
 
-For a standalone executable, run:
+With the recommended defaults:
+
+```text
+Avvia stack completo           ON
+Strict Acceptance              ON
+Public readiness timeout       600 s
+Auto NPM                       ON
+Auto runtime keys              ON
+```
+
+the wizard waits for public DNS, obtains HTTPS, starts the full Compose profile and runs `scripts/acceptance.py`. It shows **Completato** only after the strict end-to-end checks pass.
+
+The final page also probes published LAN ports from the Windows PC and shows `OK/KO`, the local address and an **Apri** button for each main web service.
+
+AdGuard Home is outside this Compose; LAN DNS is expected to be provided by a separate resolver/AdGuard instance. Private application state such as Jackett indexers and the AIOStreams runtime backup remains operator-specific.
+
+For a standalone executable:
 
 ```powershell
 .\build.ps1
 ```
 
-or download the `StreamStackSetupWizard-Windows` artifact produced by the repository's **Windows Setup Wizard** GitHub Actions workflow.
+or use the `StreamStackSetupWizard-Windows` artifact produced by GitHub Actions.
