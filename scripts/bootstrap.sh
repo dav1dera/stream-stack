@@ -28,8 +28,6 @@ copy_if_missing "$ROOT/data/seanime/data/shared/config/config.toml.example" "$RO
 copy_if_missing "$ROOT/data/easyproxy/data/config.json.example" "$ROOT/data/easyproxy/data/config.json"
 
 mkdir -p \
-  "$ROOT/data/adguardhome/data/workdir" \
-  "$ROOT/data/adguardhome/data/confdir" \
   "$ROOT/data/aiometadata/data" \
   "$ROOT/data/aiostreams/data" \
   "$ROOT/data/aiomanager/data" \

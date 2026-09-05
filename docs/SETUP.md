@@ -195,10 +195,11 @@ For the runtime configuration, import a **sanitized AIOStreams JSON export witho
 
 After the one-shot wizard, the remaining tasks are application state that should not be baked into a public repo:
 
-- complete the AdGuard Home first-run wizard;
 - add your own Jackett indexers/login state;
 - import your sanitized AIOStreams JSON configuration and add private provider/indexer/Usenet credentials;
 - create/configure any other application-specific user state stored only in a database.
+
+AdGuard Home is intentionally outside this Compose in the current topology; configure the LAN resolver separately if you use one.
 
 Nginx Proxy Manager host creation, SSL assignment and the Headscale/Headplane OAuth routing are **not** on this manual list anymore.
 

@@ -8,7 +8,7 @@
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
   <img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white">
   <img alt="Windows Wizard" src="https://img.shields.io/badge/Windows-Setup%20Wizard-6C5CE7?logo=windows11&logoColor=white">
-  <img alt="Servizi" src="https://img.shields.io/badge/Servizi-32-22C55E">
+  <img alt="Servizi" src="https://img.shields.io/badge/Servizi-31-22C55E">
   <img alt="Config" src="https://img.shields.io/badge/Config-sanitizzata-0EA5E9">
 </p>
 
@@ -36,7 +36,7 @@
 
 La repo pubblica segue la topologia corrente di `streams-aio`, ma **non contiene le credenziali o lo stato privato dell'installazione sorgente**.
 
-### 32 servizi inclusi
+### 31 servizi inclusi
 
 | Area | Servizi |
 |---|---|
@@ -48,7 +48,7 @@ La repo pubblica segue la topologia corrente di `streams-aio`, ma **non contiene
 | Indexing | Jackett |
 | Database | PostgreSQL, PgBouncer, Redis |
 | VPN / proxy | Gluetun, MicroWARP, GOST |
-| DNS | AdGuard Home, DNSCrypt Proxy, Cloudflare DDNS |
+| DNS | DNSCrypt Proxy, Cloudflare DDNS |
 | Accesso remoto | Headscale, Tailscale, Headplane, OAuth2 Proxy |
 | Reverse proxy | Nginx Proxy Manager |
 | Gestione | Portainer, Honey, Watchtower, Deunhealth |
@@ -209,8 +209,11 @@ Redis
 DNS locale:
 
 ```text
-Client LAN → AdGuard Home :53 → DNSCrypt Proxy :5353 → upstream
+Client LAN → resolver / AdGuard Home esterno → upstream
+Docker stack → DNSCrypt Proxy :5353 (disponibile per uso locale/interno)
 ```
+
+AdGuard Home non viene più eseguito nello stesso Compose: nella topologia corrente è previsto come servizio DNS separato dal Docker stack, così il DNS della LAN non dipende dal ciclo di vita dello stack streaming.
 
 ---
 
@@ -348,24 +351,13 @@ Per la configurazione runtime completa è consigliato importare un **JSON saniti
 
 # Fresh install
 
-La repo contiene `docker-compose.override.yml`, caricato automaticamente da Docker Compose, per due differenze necessarie su una macchina vuota:
-
-- AdGuard first-run: host `3010` → container `3000`;
-- esposizione LAN delle due istanze Seanime che condividono il network namespace di Gluetun.
+La repo contiene `docker-compose.override.yml`, caricato automaticamente da Docker Compose, per esporre sulla LAN le due istanze Seanime che condividono il network namespace di Gluetun (`43211` e `43311`).
 
 Questo mantiene il compose principale allineato alla topologia di riferimento senza rompere il bootstrap da zero.
 
 ---
 
 # Passaggi ancora manuali
-
-### AdGuard Home
-
-```text
-http://SERVER_LAN_IP:3010
-```
-
-Impostare la Web UI definitiva su `:90` e DNS su `:53`.
 
 ### Jackett
 
@@ -407,7 +399,7 @@ docker compose --profile all up -d
 docker compose --profile all ps
 ```
 
-Il repository contiene anche una GitHub Action che controlla sintassi Python, struttura attesa dei 32 servizi, template richiesti e validità Docker Compose ad ogni modifica.
+Il repository contiene anche una GitHub Action che controlla sintassi Python, struttura attesa dei 31 servizi, template richiesti e validità Docker Compose ad ogni modifica.
 
 ---
 

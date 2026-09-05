@@ -93,7 +93,7 @@ or run:
 .\run.ps1
 ```
 
-`run.ps1` creates a local Python virtual environment, installs only the GUI/SSH dependencies and launches `demo_launcher.py`. That entry point extends the hardened `launcher.py` with the offline Demo / Dry Run mode; real deployments still use the same hardened SSH transport and deployment logic.
+`run.ps1` creates a local Python virtual environment, installs only the GUI/SSH dependencies and launches `local_ready.py`. That entry point extends the hardened real deployment flow with the offline Demo / Dry Run mode and final LAN reachability checks.
 
 If PowerShell blocks local scripts, `Start-Wizard.cmd` already invokes it with a process-local execution-policy bypass. You can also use:
 
@@ -117,7 +117,7 @@ Output:
 windows-wizard\dist\StreamStackSetupWizard.exe
 ```
 
-GitHub Actions syntax-checks `app.py`, `remote.py`, `launcher.py` and `demo_launcher.py`, then builds the standalone EXE from `demo_launcher.py` as the artifact `StreamStackSetupWizard-Windows`.
+GitHub Actions syntax-checks the wizard modules, then builds the standalone EXE from `local_ready.py` as the artifact `StreamStackSetupWizard-Windows`.
 
 ## SSH authentication
 
@@ -204,9 +204,10 @@ Demo / Dry Run always starts from `example.test`, which is reserved for testing/
 
 Application database/account state is not fabricated by the Windows wizard. After a real deployment the remaining expected steps are:
 
-- AdGuard Home first-run wizard;
 - add the operator's own Jackett indexers/accounts;
 - import the sanitized AIOStreams JSON and enter provider/indexer/Usenet credentials;
 - verify streaming behavior and AIOStreams variants.
+
+AdGuard Home is outside the current Compose topology; LAN DNS/resolver configuration is handled separately.
 
 The final real-deployment page provides shortcuts for the main local/public UIs.

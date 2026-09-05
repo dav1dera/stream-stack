@@ -29,7 +29,6 @@ for item in [
 
 LOCAL_SERVICES = [
     ("Nginx Proxy Manager", 81, "http"),
-    ("AdGuard Home setup", 3010, "http"),
     ("Portainer", 9443, "https"),
     ("Headplane", 3000, "http"),
     ("AIOStreams", 4444, "http"),
@@ -83,12 +82,34 @@ class Wizard(current.Wizard):
                 time.sleep(0.8)
         return results
 
+    def _remove_obsolete_adguard_widgets(self, widget: ctk.CTkBaseClass) -> None:
+        """Hide legacy base-layer AdGuard shortcuts; DNS now lives outside this stack."""
+        renumber = {
+            "2.  Aggiungi": "1.  Aggiungi",
+            "3.  Importa": "2.  Importa",
+            "4.  Verifica": "3.  Verifica",
+        }
+        for child in list(widget.winfo_children()):
+            try:
+                text = str(child.cget("text"))
+            except Exception:
+                text = ""
+            if "AdGuard" in text:
+                child.destroy()
+                continue
+            for old, new in renumber.items():
+                if text.startswith(old):
+                    child.configure(text=new + text[len(old):])
+                    break
+            self._remove_obsolete_adguard_widgets(child)
+
     def build_complete(self) -> None:
         if self.demo_enabled():
             super().build_complete()
             return
 
         super().build_complete()
+        self._remove_obsolete_adguard_widgets(self.content_holder)
         children = self.content_holder.winfo_children()
         if not children:
             return
@@ -131,7 +152,7 @@ class Wizard(current.Wizard):
             ctk.CTkLabel(body, text=url, text_color="#9FB0CA", anchor="w").grid(row=row, column=2, sticky="ew", pady=4)
             ctk.CTkButton(body, text="Apri", width=68, height=30, fg_color="#1B2B44", state="normal" if url else "disabled", command=lambda u=url: webbrowser.open(u)).grid(row=row, column=3, padx=(8, 18), pady=4)
 
-        ctk.CTkLabel(body, text="La raggiungibilità della porta non sostituisce il controllo applicativo. AdGuard, Jackett e l'import JSON AIOStreams restano gli ultimi passaggi manuali previsti.", text_color="#8294AE", anchor="w", justify="left", wraplength=980).grid(row=2 + total, column=0, columnspan=4, sticky="ew", padx=18, pady=(10, 16))
+        ctk.CTkLabel(body, text="La raggiungibilità della porta non sostituisce il controllo applicativo. Jackett e l'import JSON AIOStreams restano gli ultimi passaggi manuali previsti.", text_color="#8294AE", anchor="w", justify="left", wraplength=980).grid(row=2 + total, column=0, columnspan=4, sticky="ew", padx=18, pady=(10, 16))
 
 
 if __name__ == "__main__":
