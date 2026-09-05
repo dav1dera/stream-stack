@@ -1,8 +1,29 @@
 # One-shot configuration wizard
 
-The repository is designed so installation-specific values are entered **once**.
+The repository is designed so installation-specific values are entered once and the infrastructure is considered ready only after an optional strict post-deploy acceptance test.
 
-## Fastest path
+## Recommended flow
+
+For the most automated path use the Windows wizard. Before pressing Install on a fresh public deployment, forward:
+
+```text
+TCP 80  -> SERVER_LAN_IP:80
+TCP 443 -> SERVER_LAN_IP:443
+```
+
+The recommended defaults are:
+
+```text
+AUTO_RUNTIME_KEYS=true
+AUTO_CONFIGURE_NPM=true
+PUBLIC_READY_TIMEOUT=600
+STRICT_ACCEPTANCE=true
+START_FULL_STACK=true    # Windows wizard option
+```
+
+With those settings, the Windows wizard does not show Completed until `scripts/acceptance.py` returns `ACCEPTANCE OK`.
+
+## CLI path
 
 ```bash
 git clone https://github.com/dav1dera/stream-stack.git
@@ -10,96 +31,112 @@ cd stream-stack
 ./setup.sh
 ```
 
-On the first run, `setup.sh`:
+Then start the full stack and run acceptance:
 
-1. creates a local `setup.env` from `setup.env.example`;
-2. asks only for missing required installation values;
-3. generates strong local-only passwords/tokens/secrets where possible;
-4. runs the normal template bootstrap;
-5. renders every tracked `*.example` file into the real untracked runtime file;
-6. replaces shared values consistently everywhere they are used;
-7. optionally starts only Gluetun, Headscale and Jackett to obtain runtime-generated Headscale/Jackett keys;
-8. writes those discovered values back into the generated runtime configuration;
-9. verifies that active files contain no `CHANGE_ME_*`, `example.com`, or example-LAN placeholders;
-10. validates the Compose model;
-11. starts Cloudflare DDNS + Nginx Proxy Manager;
-12. creates/reuses the NPM admin and shared Let's Encrypt certificate;
-13. creates or updates the full reference reverse-proxy topology through the NPM API.
+```bash
+docker compose --profile all up -d
+python3 scripts/acceptance.py --timeout 600
+```
 
-The resolved values are stored in `setup.env`, which is gitignored and set to mode `0600`.
-
-## Edit one file instead of answering questions
-
-You can also fill one local file first:
+Or prepare the input first:
 
 ```bash
 cp setup.env.example setup.env
 chmod 600 setup.env
 nano setup.env
 ./setup.sh --non-interactive
+docker compose --profile all up -d
+python3 scripts/acceptance.py
 ```
 
-Fields left blank in the **auto-generated** sections are created automatically.
+`setup.env` is gitignored and mode `0600`.
 
-Optional third-party integrations such as MDBList, Gemini, AniList, Trakt and the StremThru GitHub integration may remain blank when deliberately unused.
+## What `setup.sh` does
 
-## Domains: defaults or completely custom names
+1. creates/loads `setup.env`;
+2. asks only for missing required values in interactive mode;
+3. generates local-only passwords/tokens/secrets where possible;
+4. bootstraps tracked `*.example` templates into runtime files;
+5. keeps shared credentials synchronized across services;
+6. optionally starts Gluetun, Headscale and Jackett to obtain runtime keys;
+7. validates generated files and Compose;
+8. starts Cloudflare DDNS + Nginx Proxy Manager;
+9. waits for public DNS propagation;
+10. creates/reuses the NPM administrator and shared Let's Encrypt certificate;
+11. creates/updates the current proxy topology.
 
-`BASE_DOMAIN` is only the default naming source.
+The Windows wizard then optionally starts the full Compose stack and runs Strict Acceptance.
 
-For example:
+## DNS / SSL readiness
+
+The current NPM adapter waits for Cloudflare's public DNS resolver to see every managed hostname before it requests the Let's Encrypt certificate.
+
+The wait is controlled by:
+
+```text
+PUBLIC_READY_TIMEOUT=600
+```
+
+Allowed wizard range: `30`–`3600` seconds.
+
+If certificate issuance fails after DNS is ready, check:
+
+```text
+TCP 80 forwarding
+TCP 443 forwarding
+SERVER_LAN_IP
+Cloudflare token permissions
+CGNAT/public reachability
+```
+
+HTTP-01 requires TCP 80 during the install.
+
+## Strict Acceptance
+
+The post-deploy test is:
+
+```bash
+python3 scripts/acceptance.py
+```
+
+It retries until `PUBLIC_READY_TIMEOUT` and requires:
+
+- every Compose service in the `all` profile to be running;
+- healthchecked containers to be healthy;
+- expected LAN service ports to be open;
+- public non-LAN-only hostnames to resolve;
+- TLS hostname/certificate validation to succeed;
+- NPM routes to return non-5xx responses;
+- the Headscale `/admin` OAuth path to be reachable.
+
+A failed acceptance returns a non-zero exit code. The Windows wizard treats that as deployment failure and does not show a green completion state.
+
+## Domains
+
+`BASE_DOMAIN` supplies defaults, while every service may use an explicit FQDN override.
+
+Example:
 
 ```text
 BASE_DOMAIN=mydomain.net
-```
-
-produces the normal defaults:
-
-```text
-aiostreams.mydomain.net
-mfp.mydomain.net
-headscale.mydomain.net
-seanime.mydomain.net
-...
-```
-
-But every public service has an optional full-FQDN override in `setup.env`:
-
-```text
 AIOSTREAMS_HOST=aio.example.org
 AIOMETADATA_HOST=metadata.example.org
-MEDIAFLOW_HOST=streamproxy.example.net
-HEADSCALE_HOST=mesh.example.com
-STREAMVIX_HOST=vix.example.com
-SEANIME_HOST=anime.example.net
-SEANIME_SHARED_HOST=anime-shared.example.net
+MEDIAFLOW_HOST=proxy.example.net
+EASYPROXY_HOST=easyproxy.example.net
+HEADSCALE_HOST=mesh.example.org
+STREAMVIX_HOST=vix.example.org
+TVVOO_HOST=tv.example.org
+AIOMANAGER_HOST=manager.example.org
+SEANIME_HOST=anime.example.org
+SEANIME_SHARED_HOST=anime-shared.example.org
 COMETNET_HOST=cometnet.example.org
 STREMTHRU_HOST=stremthru.example.org
-PORTAINER_HOST=docker.example.com
+PORTAINER_HOST=docker.example.org
 ```
 
-The labels do **not** have to match the reference names. They may even belong to different Cloudflare zones if the API token has permission for them.
-
-The wizard propagates those choices everywhere they matter: application URLs, OAuth callback/whitelist values, Headscale/Headplane config, Honey, Cloudflare DDNS, NPM certificates and NPM proxy hosts.
-
-## Values the wizard keeps synchronized
-
-The renderer uses one setting for every shared credential, so it is not possible to accidentally use different copies of the same password in different services. This includes:
-
-- PostgreSQL password across PostgreSQL, PgBouncer, Comet, CometNet and StremThru;
-- AIOStreams operator user/password across AIO auth and forced native-service credentials;
-- Comet public/API token across Comet, CometNet and AIOStreams;
-- Jackett API key across Jackett consumers;
-- MediaFlow password across MediaFlow and StreamViX;
-- TorBox API key across AIOStreams and Comet;
-- Google OAuth client across OAuth2 Proxy/Headplane-related templates;
-- Headscale hostname across Headscale, Headplane, OAuth2 Proxy, Tailscale and NPM;
-- server LAN IP/subnet across Tailscale, Headscale and Honey;
-- selected public hostnames across service configs, DDNS and reverse proxying.
+The selected hostnames are propagated to application URLs, OAuth, Cloudflare DDNS, certificates and NPM.
 
 ## Runtime-generated keys
-
-On a fresh machine, a Jackett API key and Headscale API/pre-auth keys do not exist before those applications start.
 
 With:
 
@@ -107,63 +144,45 @@ With:
 AUTO_RUNTIME_KEYS=true
 ```
 
-the core wizard attempts to start only:
+the setup attempts to obtain automatically:
 
-- `gluetun`
-- `headscale`
-- `jackett`
+- Jackett API key;
+- Headscale user;
+- Headscale API key;
+- Headscale pre-auth key for Tailscale.
 
-It then:
-
-- reads the generated Jackett API key from Jackett's `ServerConfig.json`;
-- creates the configured Headscale user if necessary;
-- creates a Headscale API key for Headplane;
-- creates a Headscale pre-auth key for the Tailscale container;
-- re-renders all runtime files with those values.
-
-If Docker is unavailable or one of these automatic steps fails, the wizard exits with the unresolved value listed. Put the value in `setup.env` and run `./setup.sh` again.
-
-To disable runtime bootstrap deliberately:
+Disable deliberately with:
 
 ```bash
 ./setup.sh --no-runtime-keys
 ```
 
-In that mode, provide `JACKETT_API_KEY`, `HEADSCALE_API_KEY` and `HEADSCALE_AUTHKEY` yourself.
+and provide the missing values yourself.
 
-## Nginx Proxy Manager automation
+## Nginx Proxy Manager
 
-NPM is no longer a required manual first-run step.
-
-The relevant settings are:
+Relevant settings:
 
 ```text
 NPM_ADMIN_EMAIL=
 NPM_ADMIN_PASSWORD=
 LETSENCRYPT_EMAIL=
 AUTO_CONFIGURE_NPM=true
+PUBLIC_READY_TIMEOUT=600
 ```
 
-On a fresh NPM database:
+The setup:
 
-- the admin email defaults to `ALLOWED_EMAIL` when blank;
-- the admin password is generated locally when blank;
-- NPM's supported `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` variables are injected before first startup;
-- the Let's Encrypt email defaults to `ALLOWED_EMAIL`.
+1. updates Cloudflare DDNS for the selected hosts;
+2. starts DDNS and NPM;
+3. waits for public DNS visibility;
+4. authenticates to the NPM API;
+5. reuses or requests one shared SAN certificate;
+6. creates/updates the current public and LAN-only proxy hosts;
+7. applies Headscale/OAuth2/Headplane routing;
+8. verifies that all required host objects exist.
 
-Then `scripts/npm_apply.py`:
-
-1. expands Cloudflare DDNS to include the wildcard base domain and every selected public hostname;
-2. starts Cloudflare DDNS and NPM;
-3. authenticates to the local NPM API;
-4. reuses an existing certificate when it already covers all selected hosts, otherwise requests one shared Let's Encrypt SAN certificate;
-5. creates or updates all reference proxy hosts;
-6. installs the special Headscale `/admin` + `/oauth2/` routing dynamically with the chosen Headscale hostname;
-7. verifies that every required hostname exists.
-
-The fixed routing logic is documented in **[NPM.md](NPM.md)**.
-
-The NPM apply step is idempotent: rerunning it updates matching domains instead of blindly duplicating them, and unrelated/manual NPM hosts are not deleted.
+The NPM apply step is idempotent and does not delete unrelated manual hosts.
 
 Skip it with:
 
@@ -179,35 +198,22 @@ AUTO_CONFIGURE_NPM=false
 
 ## Rerunning
 
-`setup.sh` renders from the tracked `*.example` templates every time, using the current `setup.env`. This means changing a domain, password or LAN address is done in one place and then propagated consistently.
+`setup.sh` always renders from tracked templates using the current `setup.env` and reconciles NPM again. Existing matching hosts are updated in place.
 
-NPM is also reconciled again on rerun. Existing hosts using the selected domain names are updated in place. Other NPM hosts are left untouched.
-
-Because application databases and runtime state are separate from the generated config files, rerunning the wizard does not copy or publish databases. Still, review local application-specific changes before intentionally replacing generated configuration on an established installation.
+Application databases and personal state are not copied or published by rerunning the installer.
 
 ## AIOStreams
 
-AIOStreams runtime configuration lives in its database. The wizard configures its bootstrap `.env` and all credentials shared with the rest of the stack.
+The wizard configures the AIOStreams bootstrap `.env` and shared credentials. Runtime configuration still lives in AIOStreams' own state/database.
 
-For the runtime configuration, import a **sanitized AIOStreams JSON export without credentials** after AIOStreams is running. This is preferable to baking user/indexer/debrid/Usenet credentials into the public repository.
+Import a sanitized AIOStreams JSON export after the service is running, then add private provider/indexer/Usenet/debrid credentials locally.
 
-## What still remains a first-run application task
+## Remaining first-run application state
 
-After the one-shot wizard, the remaining tasks are application state that should not be baked into a public repo:
+After `ACCEPTANCE OK`, infrastructure/DNS/TLS/routing are ready. The remaining operator-specific state is intentionally manual:
 
-- add your own Jackett indexers/login state;
-- import your sanitized AIOStreams JSON configuration and add private provider/indexer/Usenet credentials;
-- create/configure any other application-specific user state stored only in a database.
+- Jackett indexers/account state;
+- AIOStreams sanitized JSON import and private credentials;
+- optional user-specific state in Seanime/Portainer or other apps.
 
-AdGuard Home is intentionally outside this Compose in the current topology; configure the LAN resolver separately if you use one.
-
-Nginx Proxy Manager host creation, SSL assignment and the Headscale/Headplane OAuth routing are **not** on this manual list anymore.
-
-After those application-state steps:
-
-```bash
-docker compose --profile all up -d
-docker compose --profile all ps
-```
-
-Use the end-to-end checks in the main `README.md` before considering the deployment reproduced.
+AdGuard Home is outside this Compose and should be configured as a separate LAN resolver if used.
