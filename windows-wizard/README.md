@@ -2,109 +2,143 @@
 
 Graphical Windows front-end for the `stream-stack` installer.
 
-The Ubuntu server remains completely headless/CLI. The wizard runs on a Windows PC, connects to the server over SSH, uploads the private `setup.env` directly through SFTP and executes the normal Linux `setup.sh` remotely.
+The Ubuntu server remains headless/CLI. The wizard runs on Windows, connects over SSH/SFTP, writes the private `setup.env`, runs the Linux setup, starts the stack and — with the default settings — refuses to show **Completed** until the strict post-deploy acceptance test passes.
 
-The same executable also includes an **offline Demo / Dry Run mode** for testing the complete input flow without a real domain, API accounts, VPN credentials or an SSH server.
+## Before pressing Install
 
-## What it does
+For a fresh public deployment, forward these ports on the router **before** starting the install:
 
-The GUI follows the same setup model as the terminal wizard but presents it as a multi-step dark interface:
+```text
+TCP 80  -> SERVER_LAN_IP:80
+TCP 443 -> SERVER_LAN_IP:443
+```
 
-1. SSH server connection;
-2. LAN/network values;
-3. public domain names, with standard names or per-service overrides;
-4. Mullvad/WireGuard credentials;
-5. Cloudflare, TMDB, TVDB and TorBox credentials;
-6. Google OAuth2, NPM and application logins;
-7. optional integrations;
-8. review/validation;
-9. remote installation with live logs, or local Dry Run validation;
-10. final links/generated credentials, or the generated demo `setup.env` preview.
+TCP 80 is required while the wizard obtains the Let's Encrypt certificate via HTTP-01. TCP 443 is required for the final HTTPS path.
 
-It keeps the reference stack logic intact. Public FQDNs are operator-defined; internal routing remains the same, including services reached through the Gluetun network namespace and the Headscale -> OAuth2 Proxy -> Headplane routing.
+The wizard contains an explicit confirmation switch for these rules. With automatic NPM + strict acceptance enabled, you cannot start a real deployment until the confirmation is checked.
+
+## Recommended one-click settings
+
+```text
+AUTO_RUNTIME_KEYS       ON
+AUTO_CONFIGURE_NPM      ON
+START_FULL_STACK        ON
+STRICT_ACCEPTANCE       ON
+PUBLIC_READY_TIMEOUT    600
+ROUTER_PORTS_READY      confirmed
+```
+
+### Strict Acceptance
+
+When enabled, the real deployment sequence is:
+
+```text
+SSH / prerequisites
+        ↓
+clone / update repo
+        ↓
+write setup.env
+        ↓
+render configs + runtime keys
+        ↓
+Cloudflare DDNS
+        ↓
+wait for public DNS
+        ↓
+NPM + Let's Encrypt
+        ↓
+start full Compose stack
+        ↓
+scripts/acceptance.py
+        ↓
+Completed only on ACCEPTANCE OK
+```
+
+The acceptance test waits up to `PUBLIC_READY_TIMEOUT` and verifies:
+
+- all Compose services are running;
+- healthchecked containers are healthy;
+- expected LAN ports are reachable;
+- public non-LAN-only hostnames resolve;
+- TLS certificate/hostname validation succeeds;
+- NPM routing returns non-5xx responses;
+- Headscale `/admin` reaches the OAuth flow.
+
+If the timeout expires, the wizard reports **deployment failed** and keeps the detailed reason in the log instead of presenting a green completion page.
+
+## DNS / certificate waiting
+
+The NPM setup waits for Cloudflare's public DNS resolver to see all generated hostnames before requesting the certificate. This removes the common race where DDNS has just created a record but Let's Encrypt is started immediately.
+
+If certificate issuance still fails, check:
+
+```text
+TCP 80 forwarding
+TCP 443 forwarding
+SERVER_LAN_IP
+Cloudflare DNS / token permissions
+CGNAT / public reachability
+```
+
+## What the wizard does
+
+1. SSH connection test;
+2. network/subnet and hostname collection;
+3. Mullvad/WireGuard configuration;
+4. Cloudflare, metadata/debrid and OAuth credentials;
+5. application logins;
+6. optional integrations;
+7. deployment options / one-click readiness controls;
+8. review and validation;
+9. remote install with live logs;
+10. strict acceptance and final service/credential page.
+
+The Linux scripts remain the source of truth. Windows only collects input and orchestrates the remote workflow.
+
+## Real deployment security
+
+- SSH/API secrets stay in process memory on Windows;
+- the real `setup.env` is uploaded directly over SFTP;
+- remote `setup.env` is mode `0600` and gitignored;
+- the review screen does not expose secret values;
+- generated credentials are read back only for the final masked/copyable fields;
+- closing the wizard discards the Windows-side copy.
 
 ## Demo / Dry Run
 
-On the first page choose **Attiva Demo / Dry Run**.
+Choose **Demo / Dry Run** on the first page to exercise the GUI without touching a server.
 
-The wizard automatically fills every required field with values that are deliberately non-production:
+It uses:
 
-- `example.test` for the base domain and all public hostnames;
-- `192.0.2.0/24` TEST-NET addresses for server/LAN examples;
-- a syntactically valid but unusable WireGuard placeholder key;
-- fake Cloudflare, TMDB, TVDB, TorBox, Google OAuth, GitHub and application credentials;
-- fake application usernames/passwords and UUIDs.
+- `example.test`;
+- TEST-NET addresses;
+- fake credentials;
+- no SSH;
+- no Docker;
+- no Cloudflare/provider calls;
+- no real Strict Acceptance.
 
-Dry Run then executes the same Windows-side `setup.env` renderer used by the real wizard and checks that:
+The demo validates only the generated `setup.env` and GUI flow.
 
-- the generated file parses back as `KEY=VALUE` data;
-- all required fields are present;
-- service hostnames remain under `*.example.test`;
-- no `CHANGE_ME_*` placeholder survives in the generated configuration.
-
-In Demo / Dry Run mode the wizard **does not**:
-
-- open an SSH connection;
-- contact Cloudflare, TorBox, TMDB, Google or any other external API;
-- run Docker or Nginx Proxy Manager;
-- execute the remote Linux `setup.sh`.
-
-The completion page shows the generated demo `setup.env`. You can copy it or save it locally as `stream-stack-demo-setup.env` for inspection.
-
-This mode validates the Windows wizard and its generated input configuration. It intentionally does not claim that fake provider credentials can pass real external authentication or that the Linux deployment itself has been exercised.
-
-## Security model
-
-### Real deployment
-
-- SSH passwords, API keys and tokens are kept in process memory on Windows.
-- The generated real `setup.env` is not written to the Windows filesystem.
-- It is uploaded directly to the Ubuntu server over SFTP.
-- The remote file is set to mode `0600`.
-- `setup.env` is gitignored by the repository.
-- The review page intentionally does not display secret values.
-- After setup, only the generated/user-facing credentials needed by the final page are read back over the existing SSH connection and held in memory.
-- Closing the application discards those Windows-side values; the authoritative copy remains the private remote `setup.env`.
-
-### Demo / Dry Run
-
-The demo file contains only fake values. It may be explicitly saved to Windows from the completion page so the generated configuration can be inspected.
-
-The SSH client loads existing Windows/OpenSSH known hosts when available. For an unknown server it accepts the key on first connection and shows the SHA-256 fingerprint after the test connection; verify that fingerprint when connecting over an untrusted network.
-
-## Easiest launch from source
+## Launch from source
 
 Requirements: Windows 10/11 and Python 3.11+.
 
 ```powershell
 git clone https://github.com/dav1dera/stream-stack.git
 cd stream-stack\windows-wizard
+.\run.ps1
 ```
 
-Then either double-click:
+or double-click:
 
 ```text
 Start-Wizard.cmd
 ```
 
-or run:
-
-```powershell
-.\run.ps1
-```
-
-`run.ps1` creates a local Python virtual environment, installs only the GUI/SSH dependencies and launches `local_ready.py`. That entry point extends the hardened real deployment flow with the offline Demo / Dry Run mode and final LAN reachability checks.
-
-If PowerShell blocks local scripts, `Start-Wizard.cmd` already invokes it with a process-local execution-policy bypass. You can also use:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\run.ps1
-```
+`run.ps1` creates a local virtual environment and launches the current `local_ready.py` entry point.
 
 ## Standalone EXE
-
-The repository contains a PyInstaller build script:
 
 ```powershell
 cd windows-wizard
@@ -117,97 +151,27 @@ Output:
 windows-wizard\dist\StreamStackSetupWizard.exe
 ```
 
-GitHub Actions syntax-checks the wizard modules, then builds the standalone EXE from `local_ready.py` as the artifact `StreamStackSetupWizard-Windows`.
+GitHub Actions also builds the Windows artifact automatically.
 
 ## SSH authentication
 
-The real deployment mode supports:
+Supported modes:
 
-- username + SSH password;
+- username + password;
 - OpenSSH private key;
 - encrypted private key + passphrase;
-- SSH agent/default keys when no password/key path is supplied.
+- SSH agent/default keys.
 
-The optional sudo password is only used when `Install prerequisites automatically` is enabled. If blank, the wizard falls back to the SSH password. With key authentication and passwordless sudo it uses `sudo -n`.
+The optional sudo password is used only when prerequisite installation requires it. If Docker is installed during the run, the wizard reconnects after adding the SSH user to the `docker` group.
 
-If Docker is installed during the run, the wizard reconnects SSH after adding the user to the `docker` group so the new group membership applies before continuing.
+## Remaining manual application state
 
-In Demo / Dry Run mode the **Simula test SSH** button performs no network operation.
+`ACCEPTANCE OK` means the infrastructure, DNS/TLS and service routing are ready. It does not fabricate private application data.
 
-## Remote deployment
+Afterwards, depending on the operator's setup:
 
-Default remote path:
+- add personal Jackett indexers/accounts;
+- import the sanitized AIOStreams backup/config and private provider/indexer/Usenet/debrid credentials;
+- complete any Seanime/Portainer user-specific state.
 
-```text
-~/stream-stack
-```
-
-During a real installation the GUI:
-
-- checks Git, Python, Docker and Docker Compose;
-- verifies that the SSH user can actually access the Docker daemon;
-- optionally installs missing prerequisites on Ubuntu;
-- clones the repo, or performs `git pull --ff-only` when it already exists;
-- uploads the complete `setup.env` directly via SFTP;
-- runs `./setup.sh --non-interactive`;
-- therefore uses the same Headscale/Jackett runtime-key automation and NPM desired-state automation as the CLI installer;
-- reads back the newly generated user-facing credentials into memory for the completion screen;
-- optionally runs `docker compose --profile all up -d`;
-- displays `docker compose --profile all ps` in the log when finished.
-
-The GUI does not reimplement the real stack deployment logic. The Linux scripts remain the single source of truth; Windows only collects inputs and orchestrates them remotely.
-
-## Generated credentials on the final page
-
-When passwords/keys are intentionally left blank in a real deployment, Linux generates them. The completion page exposes masked, copyable values for items such as:
-
-- NPM admin;
-- AIOStreams user/password/config key;
-- StremThru login;
-- both Seanime passwords;
-- MediaFlow password;
-- Comet credentials/API token;
-- shared PostgreSQL password;
-- Headscale API key;
-- Jackett API key.
-
-Use the eye button to reveal one value or `Copia tutte le credenziali generate` to put the generated set on the Windows clipboard.
-
-## Domain behavior
-
-By default, entering:
-
-```text
-example.com
-```
-
-derives:
-
-```text
-aiostreams.example.com
-aiometadata.example.com
-mfp.example.com
-headscale.example.com
-streamv.example.com
-seanime.example.com
-shared-seanime.example.com
-cometnet.example.com
-stremthru.example.com
-portainer.example.com
-```
-
-Disable `Usa nomi standard derivati dal dominio base` to type any full hostname for each service. Those hostnames are written to `setup.env` and are therefore consumed by the same Linux renderer, OAuth configuration and NPM automation.
-
-Demo / Dry Run always starts from `example.test`, which is reserved for testing/documentation rather than real public deployment.
-
-## Still manual by design
-
-Application database/account state is not fabricated by the Windows wizard. After a real deployment the remaining expected steps are:
-
-- add the operator's own Jackett indexers/accounts;
-- import the sanitized AIOStreams JSON and enter provider/indexer/Usenet credentials;
-- verify streaming behavior and AIOStreams variants.
-
-AdGuard Home is outside the current Compose topology; LAN DNS/resolver configuration is handled separately.
-
-The final real-deployment page provides shortcuts for the main local/public UIs.
+These are intentionally not committed or guessed by the wizard.
