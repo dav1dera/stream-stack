@@ -1,7 +1,7 @@
 # Stream Stack
 
 <p align="center">
-  <strong>Stack Docker self-hosted riproducibile per streaming, metadata, proxy, DNS, VPN e gestione remota.</strong>
+  <strong>Stack Docker self-hosted riproducibile per streaming, metadata, proxy, VPN, database e accesso remoto.</strong>
 </p>
 
 <p align="center">
@@ -13,30 +13,287 @@
 </p>
 
 > [!IMPORTANT]
-> Questa repository è pensata come **quick setup / disaster recovery**. Non si limita ad avviare dei container: ricostruisce la stessa architettura e la stessa logica operativa dello stack di riferimento, usando però domini, account, token e credenziali propri di chi installa.
+> La modalità consigliata è il **Windows Setup Wizard con Strict Acceptance attivo**. In questa modalità la schermata **Completato** viene mostrata solo dopo che container, porte LAN, DNS, TLS, reverse proxy e routing pubblico previsto hanno superato i test automatici.
 
 ---
 
-## Indice
+## Obiettivo
 
-- [Panoramica](#panoramica)
-- [Wizard grafico Windows](#wizard-grafico-windows)
-- [Architettura attuale](#architettura-attuale)
-- [Installazione rapida](#installazione-rapida)
-- [Cosa configura automaticamente](#cosa-configura-automaticamente)
-- [Domini e Nginx Proxy Manager](#domini-e-nginx-proxy-manager)
-- [AIOStreams](#aiostreams)
-- [Passaggi ancora manuali](#passaggi-ancora-manuali)
-- [Verifica](#verifica)
-- [Sicurezza](#sicurezza)
+`stream-stack` è il quick setup / disaster recovery pubblico della topologia privata `streams-aio`.
+
+La repository non copia database, token, certificati o stato personale. Ricrea invece automaticamente:
+
+- topologia Docker;
+- file `.env` e configurazioni generate;
+- password e secret locali;
+- PostgreSQL / PgBouncer / Redis;
+- Gluetun, MicroWARP e GOST;
+- Nginx Proxy Manager;
+- Cloudflare DDNS;
+- certificati HTTPS;
+- proxy host pubblici e LAN-only;
+- Headscale / Tailscale / Headplane / OAuth2 Proxy;
+- chiavi runtime Headscale e Jackett quando possibile;
+- tuning corrente di Comet/PostgreSQL/PgBouncer;
+- test finali di readiness.
+
+Il risultato è pensato per essere il più vicino possibile a:
+
+```text
+prepara router + credenziali
+        ↓
+StreamStackSetupWizard.exe
+        ↓
+Installa
+        ↓
+attesa automatica DNS / SSL / container
+        ↓
+ACCEPTANCE OK
+        ↓
+Completato
+```
 
 ---
 
-# Panoramica
+# Prima di avviare il wizard
 
-La repo pubblica segue la topologia corrente di `streams-aio`, ma **non contiene le credenziali o lo stato privato dell'installazione sorgente**.
+Per un fresh install pubblico, prepara questi punti **prima di premere Installa**.
 
-### 31 servizi inclusi
+## 1. Server
+
+- Ubuntu Server 24.04 consigliato;
+- IP LAN stabile/statico;
+- accesso SSH funzionante;
+- almeno Python 3; Git/Docker possono essere installati dal wizard se abiliti l'opzione dedicata.
+
+## 2. Router
+
+Inoltra verso `SERVER_LAN_IP`:
+
+```text
+TCP 80  → SERVER_LAN_IP:80
+TCP 443 → SERVER_LAN_IP:443
+```
+
+Non servono regole UDP per Nginx Proxy Manager / HTTPS.
+
+La porta **80 deve essere raggiungibile già durante il wizard**, perché Let's Encrypt usa HTTP-01 per il certificato. La 443 viene poi usata per HTTPS.
+
+> [!WARNING]
+> Se la linea è dietro CGNAT e non puoi ricevere connessioni TCP 80/443 dall'esterno, la modalità HTTPS automatica con HTTP-01 non può essere considerata one-click finché non risolvi l'accesso pubblico.
+
+## 3. Dominio / Cloudflare
+
+Servono:
+
+- dominio gestito su Cloudflare;
+- API token con permessi DNS edit sulle zone usate;
+- porte 80/443 inoltrate al server.
+
+Cloudflare DDNS viene configurato automaticamente. Lo stack attende che i record risultino visibili sul resolver pubblico Cloudflare prima di chiedere il certificato.
+
+## 4. Credenziali richieste
+
+Il wizard richiede i valori realmente necessari, tra cui:
+
+- Cloudflare API token;
+- WireGuard/Mullvad;
+- TMDB;
+- TVDB;
+- TorBox;
+- Google OAuth2.
+
+Le integrazioni opzionali possono restare vuote.
+
+---
+
+# Windows Setup Wizard
+
+## Avvio da sorgente
+
+```powershell
+git clone https://github.com/dav1dera/stream-stack.git
+cd stream-stack\windows-wizard
+.\run.ps1
+```
+
+Oppure doppio click su:
+
+```text
+Start-Wizard.cmd
+```
+
+Per creare l'EXE:
+
+```powershell
+.\build.ps1
+```
+
+Output:
+
+```text
+windows-wizard\dist\StreamStackSetupWizard.exe
+```
+
+---
+
+# Opzioni importanti del wizard
+
+Le opzioni raccomandate per un'installazione one-click completa sono:
+
+```text
+Genera automaticamente chiavi runtime          ON
+Configura automaticamente NPM                  ON
+Avvia tutto lo stack al termine                ON
+Verifica end-to-end stretta                    ON
+Timeout DNS / SSL / servizi                    600 s
+TCP 80 e TCP 443 inoltrate sul router          CONFERMATO
+```
+
+### `AUTO_RUNTIME_KEYS`
+
+Avvia temporaneamente i servizi necessari per ottenere automaticamente:
+
+- Jackett API key;
+- Headscale user;
+- Headscale API key;
+- Headscale pre-auth key per Tailscale.
+
+### `AUTO_CONFIGURE_NPM`
+
+Configura automaticamente:
+
+- account NPM iniziale;
+- Cloudflare DDNS;
+- certificato Let's Encrypt condiviso;
+- proxy host;
+- HTTPS / HTTP2 / HSTS;
+- routing speciale Headscale → OAuth2 Proxy → Headplane;
+- policy LAN-only per i servizi interni.
+
+### `PUBLIC_READY_TIMEOUT`
+
+Default:
+
+```text
+600
+```
+
+È il tempo massimo in secondi che il setup può attendere automaticamente per:
+
+- propagazione DNS pubblica;
+- readiness dei container;
+- healthcheck;
+- apertura delle porte applicative;
+- HTTPS/TLS;
+- reverse proxy.
+
+Valori supportati dal wizard: `30`–`3600` secondi.
+
+### `STRICT_ACCEPTANCE`
+
+Default:
+
+```text
+true
+```
+
+Con questa opzione attiva il wizard **non arriva a Completato** se i test finali falliscono.
+
+### Conferma router 80/443
+
+Il wizard richiede esplicitamente la conferma che:
+
+```text
+TCP 80  → server
+TCP 443 → server
+```
+
+siano già configurate. Senza conferma, con NPM + Strict Acceptance attivi, l'installazione non parte.
+
+---
+
+# Cosa verifica il test finale
+
+Dopo `docker compose --profile all up -d`, il wizard esegue:
+
+```bash
+python3 scripts/acceptance.py
+```
+
+Il test riprova automaticamente fino a `PUBLIC_READY_TIMEOUT`.
+
+Per ottenere:
+
+```text
+ACCEPTANCE OK
+```
+
+devono passare almeno questi controlli:
+
+1. tutti i servizi Compose del profilo `all` devono essere `running`;
+2. i container con healthcheck devono essere `healthy`;
+3. tutte le porte LAN attese devono essere raggiungibili;
+4. gli hostname pubblici non-LAN-only devono risolvere;
+5. la connessione TLS deve validare hostname e certificato;
+6. NPM deve restituire una risposta HTTP non-5xx;
+7. `/admin` di Headscale deve raggiungere il flusso OAuth previsto.
+
+Se uno di questi punti non diventa valido entro il timeout:
+
+```text
+ACCEPTANCE FAILED
+```
+
+il wizard si ferma e mostra il motivo nel log. Non presenta lo stack come pronto.
+
+## Test manuale CLI
+
+Puoi rilanciarlo quando vuoi:
+
+```bash
+cd ~/stream-stack
+python3 scripts/acceptance.py --timeout 600
+```
+
+---
+
+# Attesa automatica DNS e certificati
+
+Prima di richiedere il certificato, `npm_current.py` controlla tramite DNS-over-HTTPS di Cloudflare che tutti gli hostname siano diventati pubblicamente risolvibili.
+
+Flusso:
+
+```text
+Cloudflare DDNS start
+        ↓
+wait public DNS
+        ↓
+NPM API ready
+        ↓
+Let's Encrypt HTTP-01
+        ↓
+proxy host
+        ↓
+full stack
+        ↓
+strict acceptance
+```
+
+Se Let's Encrypt fallisce, il setup segnala esplicitamente di controllare:
+
+```text
+TCP 80
+TCP 443
+SERVER_LAN_IP
+DNS Cloudflare
+```
+
+---
+
+# Topologia attuale
+
+### 31 servizi
 
 | Area | Servizi |
 |---|---|
@@ -54,145 +311,107 @@ La repo pubblica segue la topologia corrente di `streams-aio`, ma **non contiene
 | Gestione | Portainer, Honey, Watchtower, Deunhealth |
 | Extra | TeamSpeak |
 
-### Stato non pubblicato
-
-- password, API key e token;
-- database applicativi privati;
-- certificati e chiavi private;
-- identità Headscale / Tailscale / WARP;
-- indexer Jackett personali;
-- librerie e stato Seanime;
-- credenziali Usenet / debrid / provider;
-- configurazioni runtime private AIOStreams.
-
-Il setup genera o richiede questi valori localmente.
+AdGuard Home è intenzionalmente esterno a questo Compose. In questo modo il DNS della LAN non dipende dal ciclo di vita dello stack streaming.
 
 ---
 
-# Wizard grafico Windows
+# Routing pubblico e LAN-only
 
-Il server Ubuntu può restare completamente **headless / CLI**. La GUI gira sul PC Windows e lavora sul server via SSH/SFTP.
+Il setup corrente genera automaticamente i seguenti host NPM.
 
-<p align="center">
-  <img src="assets/screenshots/wizard-home.svg" alt="Schermata iniziale Stream Stack Setup Wizard" width="100%">
-</p>
-
-Il wizard gestisce:
-
-1. connessione SSH;
-2. rete e subnet LAN;
-3. dominio base e hostname dei servizi;
-4. WireGuard / Gluetun;
-5. API esterne;
-6. OAuth2 e login applicativi;
-7. Nginx Proxy Manager;
-8. generazione secret;
-9. installazione remota;
-10. verifica finale dei servizi.
-
-## Rete e domini
-
-Gli hostname non sono hardcoded. Puoi usare i nomi standard oppure FQDN completamente personalizzati.
-
-<p align="center">
-  <img src="assets/screenshots/wizard-network.svg" alt="Configurazione rete e domini" width="100%">
-</p>
-
-Esempio standard:
+## Pubblici HTTPS
 
 ```text
-aiostreams.example.com
-aiometadata.example.com
-mfp.example.com
-easyproxy.example.com
-streamv.example.com
-tvvoo.example.com
-aiomanager.example.com
-headscale.example.com
-seanime.example.com
-shared-seanime.example.com
-cometnet.example.com
-stremthru.example.com
-portainer.example.com
+AIOStreams
+AIOMetadata
+MediaFlow Proxy
+EasyProxy
+Headscale / Headplane OAuth
+Seanime
+Seanime Shared
+CometNet
 ```
 
-La logica interna resta invariata anche cambiando completamente i nomi pubblici.
+## HTTPS ma LAN-only
 
-## Schermata finale
-
-<p align="center">
-  <img src="assets/screenshots/wizard-complete.svg" alt="Installazione completata" width="100%">
-</p>
-
-Alla fine vengono mostrati log, porte LAN raggiungibili e credenziali generate localmente.
-
-### Avvio su Windows
-
-```powershell
-git clone https://github.com/dav1dera/stream-stack.git
-cd stream-stack\windows-wizard
-```
-
-Poi doppio click su:
+Le richieste vengono limitate automaticamente a `LAN_SUBNET`:
 
 ```text
-Start-Wizard.cmd
+Portainer
+StremThru
+StreamViX
+TvVoo
+AIOManager
 ```
 
-oppure:
+EasyProxy resta pubblico perché viene usato direttamente dai client per il playback HLS.
 
-```powershell
-.\run.ps1
-```
-
-Per generare l'EXE:
-
-```powershell
-.\build.ps1
-```
+Comet resta raggiungibile localmente sulla porta `2020` e viene consumato internamente da AIOStreams.
 
 ---
 
-# Architettura attuale
+# Architettura sintetica
 
 ```text
 Internet
    │
-Cloudflare DNS
+Cloudflare DNS/DDNS
+   │
+TCP 80/443
    │
 Nginx Proxy Manager
    ├── AIOStreams
    ├── AIOMetadata
    ├── MediaFlow
    ├── EasyProxy
-   ├── Headscale
+   ├── Headscale / OAuth2 / Headplane
    ├── Seanime / Seanime Shared
    ├── CometNet
-   └── servizi LAN-only
-         ├── Portainer
-         ├── StremThru
-         ├── StreamViX
-         ├── TvVoo
-         └── AIOManager
+   └── host LAN-only
 ```
 
-Catena streaming / proxy principale:
+Catena streaming:
 
 ```text
 AIOStreams
-   ├── request URL mapping → StreamViX
-   ├── request URL mapping → TvVoo
-   ├── request URL mapping → MediaFlow
-   ├── request URL mapping → AIOManager
-   ├── Comet / StremThru / Jackett
-   └── Gluetun → Mullvad
-                    └── WARP / GOST fallback
+   ├── Comet
+   ├── StremThru
+   ├── Jackett
+   ├── StreamViX
+   ├── TvVoo
+   ├── AIOMetadata
+   └── proxy / provider esterni
 
-TvVoo ───────┐
-StreamViX ───┴──→ EasyProxy → playback HLS
+TvVoo / StreamViX
+        ↓
+EasyProxy / MediaFlow
+        ↓
+playback client
 ```
 
-Database:
+VPN/proxy:
+
+```text
+Gluetun → Mullvad/WireGuard
+
+MicroWARP SOCKS5 :1080
+        ↓
+GOST HTTP :8082
+        ↓
+WARP fallback
+```
+
+MicroWARP viene eseguito solo nella rete Docker e usa esplicitamente:
+
+```text
+ALLOW_NO_AUTH=1
+```
+
+Il SOCKS non viene pubblicato direttamente sull'host.
+
+---
+
+# Database
 
 ```text
 PostgreSQL
@@ -201,33 +420,96 @@ PgBouncer :6432
    ├── comet
    ├── stremthru
    └── aiomanager
-
-Redis
-   └── servizi cache / metadata
 ```
 
-DNS locale:
+La configurazione pubblica segue il tuning corrente del deployment di riferimento:
 
 ```text
-Client LAN → resolver / AdGuard Home esterno → upstream
-Docker stack → DNSCrypt Proxy :5353 (disponibile per uso locale/interno)
+PostgreSQL max_connections     120
+shared_buffers                 4GB
+work_mem globale               8MB
+synchronous_commit globale     on
+checkpoint_timeout             15min
+checkpoint_completion_target   0.95
+
+Comet synchronous_commit       off
+Comet work_mem                 16MB
+StremThru synchronous_commit   off
 ```
 
-AdGuard Home non viene più eseguito nello stesso Compose: nella topologia corrente è previsto come servizio DNS separato dal Docker stack, così il DNS della LAN non dipende dal ciclo di vita dello stack streaming.
+PgBouncer:
+
+```text
+Comet       pool 32 / max DB 40
+StremThru   pool 16 / max DB 24
+AIOManager  pool  8 / max DB 12
+Default     pool 16
+Reserve     4
+```
+
+Comet background scraper:
+
+```text
+workers                         8
+max movies/run                700
+max series/run                500
+max episodes/series/run        25
+run time budget              3600s
+```
 
 ---
 
-# Installazione rapida
+# Cosa viene generato automaticamente
 
-## Metodo consigliato — GUI Windows
+Il wizard genera localmente, senza committarli:
+
+- PostgreSQL password;
+- AIOStreams secret/password/config key;
+- AIOMetadata password/keys;
+- Comet admin/config/API token;
+- CometNet API token;
+- MediaFlow password;
+- EasyProxy password;
+- AIOManager encryption key;
+- StremThru password/vault secret;
+- Headplane secret;
+- OAuth2 cookie secret;
+- Seanime passwords;
+- NPM admin password quando necessario.
+
+`setup.env` viene scritto sul server con mode `0600` ed è ignorato da Git.
+
+---
+
+# Cosa resta manuale dopo ACCEPTANCE OK
+
+L'infrastruttura è pronta, ma alcuni **stati applicativi personali** non vengono inventati dal wizard.
+
+### Jackett
+
+Apri:
 
 ```text
-Windows Wizard → SSH → Ubuntu Server → setup.sh → NPM → Docker Compose
+http://SERVER_LAN_IP:9117
 ```
 
-Il wizard clona/aggiorna la repo, scrive `setup.env` via SFTP con permessi `0600`, esegue il setup Linux e opzionalmente avvia lo stack completo.
+e aggiungi gli indexer/account che vuoi usare.
 
-## Metodo CLI
+### AIOStreams
+
+Importa il tuo backup/config JSON sanitizzato e aggiungi le credenziali private di provider/indexer/Usenet/debrid che non devono essere pubblicate nella repo.
+
+### Seanime / Portainer
+
+Solo eventuale stato personale specifico dell'applicazione.
+
+Questi passaggi non sono errori di deployment: sono dati privati/operator-specific che la repository non può conoscere in anticipo.
+
+---
+
+# Installazione CLI
+
+Il wizard Windows è il percorso raccomandato, ma il setup Linux resta utilizzabile direttamente.
 
 ```bash
 git clone https://github.com/dav1dera/stream-stack.git
@@ -242,174 +524,67 @@ cp setup.env.example setup.env
 chmod 600 setup.env
 nano setup.env
 ./setup.sh --non-interactive
+docker compose --profile all up -d
+python3 scripts/acceptance.py --timeout 600
 ```
 
-`setup.env` è l'unica sorgente di configurazione locale da compilare.
+Nota: la conferma grafica delle porte router appartiene al wizard Windows. In CLI devi assicurarti manualmente che TCP 80/443 siano già inoltrate.
 
 ---
 
-# Cosa configura automaticamente
+# Demo / Dry Run
 
-### Valori richiesti tipicamente all'utente
+Il Windows Wizard include una modalità Demo / Dry Run che:
 
-| Area | Valori |
-|---|---|
-| Rete | IP server, subnet LAN, timezone |
-| Domini | dominio base e FQDN personalizzati opzionali |
-| Cloudflare | API token DNS |
-| VPN | WireGuard private key + address CIDR |
-| Metadata | TMDB API key/token, TVDB API key |
-| Debrid | TorBox API key |
-| OAuth | Google Client ID, Client Secret, email consentita |
+- usa `example.test`;
+- usa indirizzi TEST-NET;
+- genera un `setup.env` fittizio;
+- valida il flusso GUI;
+- non usa SSH;
+- non avvia Docker;
+- non contatta Cloudflare o provider esterni;
+- non esegue l'acceptance reale.
 
-### Secret generati automaticamente
-
-- password PostgreSQL;
-- AIOStreams `SECRET_KEY`;
-- password e config key AIOStreams;
-- password AIOMetadata;
-- password Comet;
-- token Comet / CometNet;
-- password MediaFlow;
-- password EasyProxy;
-- chiave cifratura AIOManager;
-- secret Headplane;
-- cookie secret OAuth2 Proxy;
-- password / vault secret StremThru;
-- password Seanime e Seanime Shared;
-- password NPM su installazione nuova.
-
-I valori condivisi vengono propagati automaticamente nei template corretti.
-
-### Runtime key
-
-Con:
-
-```text
-AUTO_RUNTIME_KEYS=true
-```
-
-il setup prova anche a:
-
-- rilevare l'API key Jackett;
-- creare l'utente Headscale;
-- creare la Headscale API key;
-- creare una pre-auth key Tailscale;
-- rigenerare i file dipendenti.
+È utile per testare il wizard senza modificare un server.
 
 ---
 
-# Domini e Nginx Proxy Manager
+# Verifica repository
 
-NPM viene gestito in modalità **desired state**: un host esistente viene aggiornato, uno mancante viene creato.
-
-| Servizio | Target | Porta | Policy |
-|---|---|---:|---|
-| AIOStreams | `aiostreams` | 4444 | HTTPS |
-| AIOMetadata | `aiometadata` | 1337 | HTTPS |
-| MediaFlow | `mediaflow-proxy-light` | 8888 | HTTPS |
-| EasyProxy | `easyproxy` | 8760 | HTTPS pubblico |
-| Headscale | `headscale` | 8080 | HTTPS + routing Headplane/OAuth |
-| Seanime | `gluetun` | 43211 | HTTPS |
-| Seanime Shared | `gluetun` | 43311 | HTTPS |
-| CometNet | `gluetun` | 8765 | HTTPS / WebSocket |
-| Portainer | `portainer` | 9000 | LAN-only |
-| StremThru | `gluetun` | 9090 | LAN-only |
-| StreamViX | `streamvix` | 7860 | LAN-only |
-| TvVoo | `tvvoo` | 5000 | LAN-only |
-| AIOManager | `aiomanager` | 1610 | LAN-only |
-
-Le regole LAN-only vengono generate usando **la subnet scelta dall'utente**, non una subnet hardcoded.
-
-## Headscale / Headplane
-
-```text
-/                 → Headscale
-/admin            → OAuth2 Proxy → Headplane
-/oauth2/*          → OAuth2 Proxy
-/oauth2/callback   → OAuth2 Proxy
-```
-
----
-
-# AIOStreams
-
-AIOStreams usa l'immagine `nightly` come il deployment corrente.
-
-Il template include anche i mapping interni per evitare round-trip inutili attraverso il dominio pubblico:
-
-```text
-StreamViX   → http://streamvix:7860
-TvVoo       → http://tvvoo:5000
-MediaFlow   → http://mediaflow-proxy-light:8888
-AIOManager  → http://aiomanager:1610
-```
-
-Per la configurazione runtime completa è consigliato importare un **JSON sanitizzato senza credenziali**, poi aggiungere le proprie chiavi provider/indexer/Usenet.
-
----
-
-# Fresh install
-
-La repo contiene `docker-compose.override.yml`, caricato automaticamente da Docker Compose, per esporre sulla LAN le due istanze Seanime che condividono il network namespace di Gluetun (`43211` e `43311`).
-
-Questo mantiene il compose principale allineato alla topologia di riferimento senza rompere il bootstrap da zero.
-
----
-
-# Passaggi ancora manuali
-
-### Jackett
-
-```text
-http://SERVER_LAN_IP:9117
-```
-
-Aggiungere i propri indexer.
-
-### AIOStreams
-
-Importare il JSON sanitizzato e aggiungere le credenziali private.
-
-### Portainer / Seanime
-
-Completare solo lo stato applicativo personale non pubblicabile.
-
----
-
-# Verifica
-
-Validazione strutturale inclusa:
+Validazione strutturale:
 
 ```bash
 python3 scripts/validate_stack.py
 ```
 
-Controllo Compose:
+Bootstrap template + Compose:
 
 ```bash
 bash scripts/bootstrap.sh
 docker compose config --quiet
 ```
 
-Avvio:
+GitHub Actions controlla automaticamente:
 
-```bash
-docker compose --profile all up -d
-docker compose --profile all ps
-```
-
-Il repository contiene anche una GitHub Action che controlla sintassi Python, struttura attesa dei 31 servizi, template richiesti e validità Docker Compose ad ogni modifica.
+- sintassi Python;
+- struttura dei 31 servizi;
+- template richiesti;
+- tuning atteso;
+- plumbing Strict Acceptance;
+- Docker Compose;
+- build del Windows Setup Wizard.
 
 ---
 
 # Sicurezza
 
-- `setup.env` è ignorato da Git e impostato a `0600`;
+- nessuna password/token privata della repo sorgente viene copiata;
+- `setup.env` è gitignored e `0600`;
 - i secret vengono generati localmente;
-- i domini e le subnet della configurazione sorgente non vengono hardcodati nel quick setup;
-- i servizi LAN-only mantengono la stessa logica ma usano `LAN_SUBNET` dell'installatore;
-- nessun database privato viene copiato nella repo pubblica.
+- i servizi LAN-only sono limitati alla subnet configurata;
+- MicroWARP no-auth resta interno alla rete Docker;
+- database e stato applicativo privato non vengono pubblicati;
+- il validator cerca riferimenti hardcoded noti prima delle build.
 
 > [!WARNING]
-> Prima di rendere pubblico un nuovo file proveniente da `streams-aio`, controllare sempre che non contenga token, password, email private, certificati o stato applicativo sensibile.
+> Prima di pubblicare nuovi file provenienti da un deployment privato, verifica sempre che non contengano token, password, email private, certificati, database o stato applicativo sensibile.
