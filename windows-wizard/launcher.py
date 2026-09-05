@@ -4,6 +4,7 @@ import json
 import posixpath
 import shlex
 import time
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -57,7 +58,14 @@ class Wizard(base.Wizard):
     def __init__(self) -> None:
         self.generated_credentials: dict[str, str] = {}
         self.credential_entries: list[ctk.CTkEntry] = []
+        self.acceptance_passed = False
         super().__init__()
+
+    def _init_defaults(self) -> None:
+        super()._init_defaults()
+        self.bool_var("STRICT_ACCEPTANCE").set(True)
+        self.bool_var("ROUTER_PORTS_READY").set(False)
+        self.var("PUBLIC_READY_TIMEOUT").set("600")
 
     def _reconnect(self) -> None:
         self.session.close()
@@ -65,11 +73,91 @@ class Wizard(base.Wizard):
         time.sleep(0.8)
         self.ensure_connected(force=True)
 
+    def build_optional(self) -> None:
+        super().build_optional()
+        children = self.content_holder.winfo_children()
+        if not children:
+            return
+        page = children[0]
+
+        ready = self.card(
+            page,
+            "One-click readiness",
+            "Il wizard considera conclusa l'installazione solo dopo i test end-to-end.",
+        )
+        self.field(
+            ready,
+            base.FieldSpec(
+                "PUBLIC_READY_TIMEOUT",
+                "Timeout DNS / SSL / servizi (secondi)",
+                default="600",
+                help_text="Tempo massimo di attesa automatica prima di dichiarare il deployment non pronto.",
+            ),
+            0,
+            0,
+        )
+        ctk.CTkSwitch(
+            ready,
+            text="Verifica end-to-end stretta prima di mostrare 'Completato'",
+            variable=self.bool_var("STRICT_ACCEPTANCE"),
+            progress_color=self.ACCENT,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=6)
+        ctk.CTkSwitch(
+            ready,
+            text="Ho inoltrato TCP 80 e TCP 443 del router verso l'IP del server",
+            variable=self.bool_var("ROUTER_PORTS_READY"),
+            progress_color=self.ACCENT,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
+        ctk.CTkLabel(
+            ready,
+            text=(
+                "Per un fresh install HTTPS le porte vanno aperte PRIMA di premere Installa: "
+                "Let's Encrypt usa la 80 durante il wizard e il test finale usa la 443."
+            ),
+            text_color="#8EA0B9",
+            wraplength=900,
+            justify="left",
+            anchor="w",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+    def validate_all(self, show_message: bool = False) -> list[str]:
+        errors = super().validate_all(show_message=False)
+        try:
+            timeout = int(self.var("PUBLIC_READY_TIMEOUT").get().strip() or "600")
+            if not 30 <= timeout <= 3600:
+                raise ValueError
+        except ValueError:
+            errors.append("Timeout readiness non valido: usa un valore tra 30 e 3600 secondi")
+
+        demo = bool(hasattr(self, "demo_enabled") and self.demo_enabled())
+        strict = self.bool_var("STRICT_ACCEPTANCE").get()
+        start_full = self.bool_var("START_FULL_STACK").get()
+        auto_npm = self.bool_var("AUTO_CONFIGURE_NPM").get()
+
+        if strict and not start_full and not demo:
+            errors.append("La verifica end-to-end stretta richiede 'Avvia tutto lo stack al termine'")
+        if strict and auto_npm and start_full and not demo and not self.bool_var("ROUTER_PORTS_READY").get():
+            errors.append("Conferma di aver inoltrato TCP 80 e TCP 443 del router verso il server")
+
+        if show_message and errors:
+            messagebox.showerror(
+                "Configurazione incompleta",
+                "\n".join(f"• {error}" for error in errors),
+            )
+        return errors
+
+    def setup_env_text(self) -> str:
+        text = super().setup_env_text()
+        timeout = self.var("PUBLIC_READY_TIMEOUT").get().strip() or "600"
+        strict = "true" if self.bool_var("STRICT_ACCEPTANCE").get() else "false"
+        return text + f"PUBLIC_READY_TIMEOUT={timeout}\nSTRICT_ACCEPTANCE={strict}\n"
+
     def _deploy_worker(self) -> None:
         def emit(line: str) -> None:
             self.events.put(("log", line))
 
         try:
+            self.acceptance_passed = False
             self.ensure_connected(force=True)
             remote_dir = self.session.resolve(self.var("REMOTE_DIR").get())
 
@@ -152,12 +240,12 @@ fi
             self.session.put_text(setup_path, self.setup_env_text(), 0o600)
             emit("setup.env scritto direttamente via SFTP con mode 0600")
 
-            self.events.put(("deploy_status", ("Esecuzione setup Linux e NPM…", 0.38)))
+            self.events.put(("deploy_status", ("Esecuzione setup Linux, DNS e NPM…", 0.38)))
             setup_cmd = (
                 f"cd {shlex.quote(remote_dir)} && "
                 "chmod +x setup.sh scripts/bootstrap.sh && ./setup.sh --non-interactive"
             )
-            if self.session.stream(setup_cmd, emit, timeout=1800) != 0:
+            if self.session.stream(setup_cmd, emit, timeout=2400) != 0:
                 raise RemoteError("setup.sh ha restituito un errore")
 
             # setup.sh writes generated local/runtime secrets back to setup.env.
@@ -170,15 +258,33 @@ fi
             }
 
             if self.bool_var("START_FULL_STACK").get():
-                self.events.put(("deploy_status", ("Avvio stack completo…", 0.78)))
+                self.events.put(("deploy_status", ("Avvio stack completo…", 0.76)))
                 up_cmd = f"cd {shlex.quote(remote_dir)} && docker compose --profile all up -d"
                 if self.session.stream(up_cmd, emit, timeout=1800) != 0:
                     raise RemoteError("Avvio dello stack fallito")
 
-            self.events.put(("deploy_status", ("Verifica container…", 0.90)))
+            self.events.put(("deploy_status", ("Verifica container…", 0.86)))
             status_cmd = f"cd {shlex.quote(remote_dir)} && docker compose --profile all ps"
             status = self.session.capture(status_cmd, timeout=120)
             emit(status.rstrip())
+
+            if self.bool_var("START_FULL_STACK").get() and self.bool_var("STRICT_ACCEPTANCE").get():
+                timeout = int(self.var("PUBLIC_READY_TIMEOUT").get().strip() or "600")
+                self.events.put(("deploy_status", ("Acceptance test end-to-end…", 0.92)))
+                acceptance_cmd = (
+                    f"cd {shlex.quote(remote_dir)} && "
+                    f"python3 scripts/acceptance.py --timeout {timeout}"
+                )
+                if self.session.stream(acceptance_cmd, emit, timeout=timeout + 90) != 0:
+                    raise RemoteError(
+                        "Acceptance test fallito: il wizard non considera lo stack pronto. "
+                        "Controlla il log sopra; in particolare DNS, TCP 80/443, TLS e container."
+                    )
+                self.acceptance_passed = True
+                self.events.put(("deploy_status", ("Acceptance superato", 0.98)))
+            else:
+                emit("Acceptance end-to-end stretta disattivata: il wizard non certifica la readiness pubblica.")
+
             self.events.put(("deploy_done", status))
         except Exception as exc:
             self.events.put(("deploy_error", str(exc)))
@@ -189,6 +295,29 @@ fi
         if not children:
             return
         page = children[0]
+
+        if self.acceptance_passed:
+            ready = self.card(
+                page,
+                "Deployment acceptance",
+                "Il wizard ha atteso la readiness e ha completato i test end-to-end prima di arrivare qui.",
+            )
+            checks = [
+                "Container Compose avviati/healthy",
+                "Porte LAN attese raggiungibili",
+                "Hostname pubblici non-LAN-only risolti",
+                "TLS/certificati validi per hostname",
+                "Reverse proxy NPM senza errori HTTP 5xx",
+                "Flusso OAuth Headscale /admin raggiungibile",
+            ]
+            for row, text in enumerate(checks):
+                ctk.CTkLabel(
+                    ready,
+                    text=f"✓  {text}",
+                    text_color=self.SUCCESS,
+                    anchor="w",
+                ).grid(row=row, column=0, columnspan=2, sticky="w", pady=3)
+
         if not self.generated_credentials:
             return
 
