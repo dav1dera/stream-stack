@@ -116,18 +116,29 @@ class Wizard(current.Wizard):
         page = children[0]
         host = self.var("SERVER_LAN_IP").get().strip()
         started = self.bool_var("START_FULL_STACK").get()
+        strict = self.bool_var("STRICT_ACCEPTANCE").get()
         results = self.probe_local_services() if started else {port: False for _, port, _ in LOCAL_SERVICES}
         ok_count = sum(1 for value in results.values() if value)
         total = len(LOCAL_SERVICES)
 
-        if started and ok_count == total:
-            title = "Setup locale pronto"
-            subtitle = f"{ok_count}/{total} servizi LAN raggiungibili da questo PC."
+        if started and strict and self.acceptance_passed and ok_count == total:
+            title = "Deployment one-click verificato"
+            subtitle = (
+                f"Acceptance end-to-end superato e {ok_count}/{total} servizi LAN raggiungibili da questo PC. "
+                "La schermata Completato viene mostrata solo dopo la readiness."
+            )
             border = "#1E5B46"
             heading_color = self.SUCCESS
+        elif started and ok_count == total:
+            title = "Setup locale pronto"
+            subtitle = (
+                f"{ok_count}/{total} servizi LAN raggiungibili, ma la verifica end-to-end stretta non e' stata eseguita."
+            )
+            border = "#7A5714"
+            heading_color = self.WARNING
         elif started:
             title = "Verifica accesso locale"
-            subtitle = f"{ok_count}/{total} porte LAN rispondono. I servizi mancanti possono essere ancora in avvio."
+            subtitle = f"{ok_count}/{total} porte LAN rispondono. Il deployment non e' completamente verificato."
             border = "#7A5714"
             heading_color = self.WARNING
         else:
@@ -152,7 +163,17 @@ class Wizard(current.Wizard):
             ctk.CTkLabel(body, text=url, text_color="#9FB0CA", anchor="w").grid(row=row, column=2, sticky="ew", pady=4)
             ctk.CTkButton(body, text="Apri", width=68, height=30, fg_color="#1B2B44", state="normal" if url else "disabled", command=lambda u=url: webbrowser.open(u)).grid(row=row, column=3, padx=(8, 18), pady=4)
 
-        ctk.CTkLabel(body, text="La raggiungibilità della porta non sostituisce il controllo applicativo. Jackett e l'import JSON AIOStreams restano gli ultimi passaggi manuali previsti.", text_color="#8294AE", anchor="w", justify="left", wraplength=980).grid(row=2 + total, column=0, columnspan=4, sticky="ew", padx=18, pady=(10, 16))
+        ctk.CTkLabel(
+            body,
+            text=(
+                "Il test automatico certifica infrastruttura, DNS/TLS, reverse proxy e raggiungibilita' dei servizi. "
+                "Restano manuali solo gli stati applicativi personali: indexer/account Jackett e import/configurazione runtime AIOStreams."
+            ),
+            text_color="#8294AE",
+            anchor="w",
+            justify="left",
+            wraplength=980,
+        ).grid(row=2 + total, column=0, columnspan=4, sticky="ew", padx=18, pady=(10, 16))
 
 
 if __name__ == "__main__":
