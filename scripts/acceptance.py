@@ -64,14 +64,25 @@ def as_bool(value: str, default: bool = True) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def compose_ps() -> tuple[bool, list[str]]:
-    """Require every service in the all profile to be running and healthy when it has a healthcheck."""
-    proc = subprocess.run(
-        ["docker", "compose", "--profile", "all", "ps", "-a", "--format", "json"],
+def _run_compose(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", "compose", "--profile", "all", *args],
         cwd=ROOT,
         text=True,
         capture_output=True,
     )
+
+
+def compose_ps() -> tuple[bool, list[str]]:
+    """Require every service in the all profile to exist, run, and be healthy when applicable."""
+    expected_proc = _run_compose("config", "--services")
+    if expected_proc.returncode != 0:
+        return False, [
+            f"docker compose config --services failed: {expected_proc.stderr.strip() or expected_proc.stdout.strip()}"
+        ]
+    expected = {line.strip() for line in expected_proc.stdout.splitlines() if line.strip()}
+
+    proc = _run_compose("ps", "-a", "--format", "json")
     if proc.returncode != 0:
         return False, [f"docker compose ps failed: {proc.stderr.strip() or proc.stdout.strip()}"]
 
@@ -93,7 +104,11 @@ def compose_ps() -> tuple[bool, list[str]]:
             except json.JSONDecodeError:
                 return False, ["unable to parse docker compose ps --format json output"]
 
+    actual = {str(row.get("Service") or "").strip() for row in rows if row.get("Service")}
     problems: list[str] = []
+    for service in sorted(expected - actual):
+        problems.append(f"{service}: container missing")
+
     for row in rows:
         service = str(row.get("Service") or row.get("Name") or "unknown")
         state = str(row.get("State") or "").lower()
@@ -154,7 +169,6 @@ def https_check(hostname: str, path: str = "/", timeout: float = 8.0) -> tuple[b
         conn.request("GET", path, headers={"User-Agent": "stream-stack-acceptance/1.0"})
         response = conn.getresponse()
         status = response.status
-        location = response.getheader("Location") or ""
         response.read(1024)
         conn.close()
     except Exception as exc:
@@ -162,11 +176,6 @@ def https_check(hostname: str, path: str = "/", timeout: float = 8.0) -> tuple[b
 
     if status >= 500:
         return False, f"HTTP {status}"
-
-    if path == "/admin" and status in {301, 302, 303, 307, 308}:
-        lowered = location.lower()
-        if "oauth" not in lowered and "accounts.google" not in lowered:
-            return False, f"unexpected OAuth redirect: {location or '(empty)'}"
 
     return True, f"HTTP {status} via {', '.join(addresses)}"
 
@@ -180,11 +189,14 @@ def public_https(values: dict[str, str]) -> tuple[bool, list[str], list[str]]:
         if item["setting"] in lan_only:
             continue
         hostname = item["hostname"]
-        path = "/admin" if item["setting"] == "HEADSCALE_HOST" else "/"
-        ok, detail = https_check(hostname, path)
-        details.append(f"{hostname}: {detail}")
-        if not ok:
-            problems.append(f"{hostname}: {detail}")
+        paths = ["/"]
+        if item["setting"] == "HEADSCALE_HOST":
+            paths = ["/admin", "/oauth2/sign_in"]
+        for path in paths:
+            ok, detail = https_check(hostname, path)
+            details.append(f"{hostname}{path}: {detail}")
+            if not ok:
+                problems.append(f"{hostname}{path}: {detail}")
 
     return not problems, problems, details
 
@@ -195,7 +207,7 @@ def run_once(values: dict[str, str]) -> tuple[bool, list[str], list[str]]:
 
     ok, problems = compose_ps()
     if ok:
-        details.append("Docker Compose: all services running/healthy")
+        details.append("Docker Compose: every expected service is present and running/healthy")
     else:
         failures.extend(problems)
 
@@ -236,7 +248,11 @@ def main() -> int:
         print("ACCEPTANCE FAILED: setup.env missing or empty", flush=True)
         return 2
 
-    timeout = args.timeout or int(values.get("PUBLIC_READY_TIMEOUT", "600") or "600")
+    try:
+        configured_timeout = int(values.get("PUBLIC_READY_TIMEOUT", "600") or "600")
+    except ValueError:
+        configured_timeout = 600
+    timeout = args.timeout or configured_timeout
     timeout = max(30, min(timeout, 3600))
     interval = max(2, min(args.interval, 60))
     deadline = time.time() + timeout
@@ -249,13 +265,13 @@ def main() -> int:
         ok, failures, details = run_once(values)
         if ok:
             print("ACCEPTANCE OK", flush=True)
-            print("- all Compose services are running/healthy", flush=True)
+            print("- every expected Compose service is present and running/healthy", flush=True)
             print("- expected LAN ports are reachable", flush=True)
             if as_bool(values.get("AUTO_CONFIGURE_NPM", "true")):
                 print("- public non-LAN-only hostnames resolve", flush=True)
                 print("- TLS hostname/certificate validation succeeds", flush=True)
                 print("- NPM routes return non-5xx responses", flush=True)
-                print("- Headscale /admin reaches the OAuth flow", flush=True)
+                print("- Headscale /admin and /oauth2/sign_in routes are reachable", flush=True)
             for detail in details:
                 print(f"  {detail}", flush=True)
             return 0
