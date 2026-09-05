@@ -45,33 +45,6 @@ services:
       - "deunhealth.restart.on.unhealthy=true"
     profiles: [all]
 
-  # 📢 AdGuardHome adblocker
-  adguardhome:                      
-    image: adguard/adguardhome:latest  
-    container_name: adguardhome  
-    restart: unless-stopped
-    volumes:  
-      - ./data/adguardhome/data/workdir:/opt/adguardhome/work  
-      - ./data/adguardhome/data/confdir:/opt/adguardhome/conf 
-      - ./data/npm/data/letsencrypt:/etc/letsencrypt
-    ports:
-      - 53:53/tcp     # ADGH local DNS address
-      - 53:53/udp     # ADGH local DNS address
-      - 90:90             # ADGH web interface
-      - 3010:3010         # ADGH 1st time setup
-    # - 6443:6443/tcp     # ADGH DOH
-    # - 6443:6443/udp     # ADGH DOH
-    # - 853:853/tcp       # ADGH DOT
-    # - 853:853/udp       # ADGH QUIC
-    networks:
-       default:
-         ipv4_address: 172.18.0.3
-       vpn-net:
-         ipv4_address: 172.19.0.3
-    labels:
-      - "deunhealth.restart.on.unhealthy=true"
-    profiles: [all]
-
  # 🕵️‍♂️ DNScrypt-Proxy  
   dnscrypt-proxy:
     image: klutchell/dnscrypt-proxy:latest
@@ -394,6 +367,8 @@ services:
   microwarp:
     image: ghcr.io/ccbkkb/microwarp:latest
     container_name: warp
+    environment:
+      - ALLOW_NO_AUTH=1
     restart: always
     cap_add:
       - NET_ADMIN

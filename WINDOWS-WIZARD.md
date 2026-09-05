@@ -14,7 +14,7 @@ The GUI runs on Windows and configures the headless Ubuntu Docker server remotel
 
 With **Avvia stack completo** enabled (the default), the wizard does not stop after writing configuration files: it starts the full Compose profile and the final page probes the server's published ports from the Windows PC. The completion screen shows `OK/KO`, the local `http(s)://SERVER_LAN_IP:PORT` address and an **Apri** button for each main web service. This includes both Seanime instances on ports `43211` and `43311`.
 
-AdGuard Home is intentionally exposed on its first-run setup port (`3010`). Jackett and other applications can likewise be locally reachable while still requiring their application-specific first-run configuration.
+AdGuard Home is no longer deployed by this Compose; LAN DNS is expected to be provided by a separate resolver/AdGuard instance. Jackett and other applications can remain locally reachable while still requiring their application-specific first-run configuration.
 
 For a standalone executable, run:
 

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
 
 EXPECTED_SERVICES = {
-    "tailscale", "portainer", "adguardhome", "dnscrypt-proxy", "headscale",
+    "tailscale", "portainer", "dnscrypt-proxy", "headscale",
     "headplane", "npm", "cloudflare-ddns", "aiometadata", "mediaflow-proxy-light",
     "aiostreams", "pgbouncer", "postgres", "redis", "watchtower", "honey",
     "teamspeak", "microwarp", "gost", "oauth2-proxy", "easyproxy", "streamvix",
@@ -23,13 +23,15 @@ REQUIRED_FILES = {
     "scripts/npm_apply.py", "scripts/npm_current.py",
     "data/easyproxy/.env.example", "data/easyproxy/data/config.json.example",
     "data/tvvoo/.env.example", "data/aiomanager/.env.example",
-    "data/aiostreams/.env.example", "data/pgbouncer/data/pgbouncer.ini",
-    "data/pgbouncer/data/userlist.txt.example", "data/postgres/init/01-databases.sql",
+    "data/aiostreams/.env.example", "data/comet/.env.example",
+    "data/pgbouncer/data/pgbouncer.ini", "data/pgbouncer/data/userlist.txt.example",
+    "data/postgres/postgresql.conf", "data/postgres/init/01-databases.sql",
     "windows-wizard/Start-Wizard.cmd", "windows-wizard/run.ps1",
     "windows-wizard/local_ready.py",
 }
 
 REQUIRED_SNIPPETS = {
+    "docker-compose.yml": ["ALLOW_NO_AUTH=1"],
     "data/aiostreams/.env.example": [
         "REQUEST_URL_MAPPINGS=", "http://streamvix:7860", "http://tvvoo:5000",
         "http://aiomanager:1610", "MAX_VARIANTS=30", "MAX_ADDONS=20",
@@ -46,11 +48,28 @@ REQUIRED_SNIPPETS = {
         "DB_TYPE=postgres", "pgbouncer:6432/aiomanager",
         "CHANGE_ME_AIOMANAGER_ENCRYPTION_KEY",
     ],
-    "data/pgbouncer/data/pgbouncer.ini": [
-        "aiomanager = host=postgres", "comet = host=postgres",
-        "stremthru = host=postgres",
+    "data/comet/.env.example": [
+        "BACKGROUND_SCRAPER_CONCURRENT_WORKERS=8",
+        "BACKGROUND_SCRAPER_MAX_MOVIES_PER_RUN=700",
+        "BACKGROUND_SCRAPER_MAX_SERIES_PER_RUN=500",
+        "BACKGROUND_SCRAPER_MAX_EPISODES_PER_SERIES_PER_RUN=25",
     ],
-    "docker-compose.override.yml": ["3010:3000", "43211:43211", "43311:43311"],
+    "data/pgbouncer/data/pgbouncer.ini": [
+        "comet = host=postgres port=5432 dbname=comet pool_size=32 max_db_connections=40",
+        "stremthru = host=postgres port=5432 dbname=stremthru pool_size=16 max_db_connections=24",
+        "aiomanager = host=postgres port=5432 dbname=aiomanager pool_size=8 max_db_connections=12",
+        "default_pool_size = 16", "reserve_pool_size = 4",
+    ],
+    "data/postgres/postgresql.conf": [
+        "max_connections = 120", "synchronous_commit = on",
+        "checkpoint_timeout = 15min", "checkpoint_completion_target = 0.95",
+    ],
+    "data/postgres/init/01-databases.sql": [
+        "ALTER ROLE comet SET synchronous_commit = off;",
+        "ALTER ROLE comet SET work_mem = '16MB';",
+        "ALTER ROLE stremthru SET synchronous_commit = off;",
+    ],
+    "docker-compose.override.yml": ["43211:43211", "43311:43311"],
 }
 
 # Constructed in pieces so the validator does not flag its own test literals.
@@ -88,8 +107,8 @@ def main() -> int:
             problems.append("servizi mancanti: " + ", ".join(missing))
         if extra:
             problems.append("servizi inattesi: " + ", ".join(extra))
-        if len(actual) != 32:
-            problems.append(f"numero servizi: attesi 32, trovati {len(actual)}")
+        if len(actual) != 31:
+            problems.append(f"numero servizi: attesi 31, trovati {len(actual)}")
 
     for rel in sorted(REQUIRED_FILES):
         if not (ROOT / rel).exists():
@@ -125,10 +144,12 @@ def main() -> int:
         return 1
 
     print("VALIDAZIONE OK")
-    print("- 32 servizi attesi presenti")
+    print("- 31 servizi attesi presenti")
     print("- template strutturali presenti")
+    print("- tuning Comet/PostgreSQL/PgBouncer allineato")
+    print("- MicroWARP configurato per SOCKS interno senza auth")
     print("- mapping EasyProxy/TvVoo/AIOManager presenti")
-    print("- override fresh-install AdGuard/Seanime presente")
+    print("- override fresh-install Seanime presente")
     print("- nessun riferimento privato noto nei file di setup")
     return 0
 

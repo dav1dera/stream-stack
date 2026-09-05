@@ -50,7 +50,11 @@ if [[ -f "$ROOT/setup.env" ]]; then
 fi
 
 if (( NO_NPM )); then
-  python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}"
+  python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}" | sed \
+    -e '/  2\. Complete the AdGuard first-run wizard\./d' \
+    -e 's/  3\. Add your Jackett indexers\./  2. Add your Jackett indexers./' \
+    -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import your sanitized AIOStreams JSON configuration./' \
+    -e 's/  5\. Run: docker compose --profile all up -d/  4. Run: docker compose --profile all up -d/'
   echo
   echo "Automazione Nginx Proxy Manager saltata."
   echo "Consulta docs/NPM.md per l'equivalente manuale."
@@ -58,7 +62,11 @@ if (( NO_NPM )); then
 fi
 
 python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}" | sed \
-  's#  1\. Configure Nginx Proxy Manager / certificates using docs/NPM.md\.#  1. Nginx Proxy Manager / certificates will be configured automatically next.#'
+  -e 's#  1\. Configure Nginx Proxy Manager / certificates using docs/NPM.md\.#  1. Nginx Proxy Manager / certificates will be configured automatically next.#' \
+  -e '/  2\. Complete the AdGuard first-run wizard\./d' \
+  -e 's/  3\. Add your Jackett indexers\./  2. Add your Jackett indexers./' \
+  -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import your sanitized AIOStreams JSON configuration./' \
+  -e 's/  5\. Run: docker compose --profile all up -d/  4. Run: docker compose --profile all up -d/'
 
 echo
 echo "Applicazione configurazione Nginx Proxy Manager..."
@@ -66,4 +74,4 @@ python3 "$ROOT/scripts/npm_current.py"
 
 echo
 echo "Configurazione one-shot completata."
-echo "Restano gli stati applicativi: AdGuard, indexer Jackett e import JSON sanitizzato AIOStreams."
+echo "Restano gli stati applicativi: indexer Jackett e import JSON sanitizzato AIOStreams."
