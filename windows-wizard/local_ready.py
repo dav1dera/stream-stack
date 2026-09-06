@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import posixpath
 import socket
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -55,6 +57,10 @@ class Wizard(current.Wizard):
         if item[0] != "JACKETTIO_HOST"
     ] + EXTRA_HOST_FIELDS
 
+    def __init__(self) -> None:
+        self.aiostreams_template_text = ""
+        super().__init__()
+
     def _port_open(self, host: str, port: int, timeout: float = 0.45) -> bool:
         try:
             with socket.create_connection((host, port), timeout=timeout):
@@ -102,6 +108,50 @@ class Wizard(current.Wizard):
                     child.configure(text=new + text[len(old):])
                     break
             self._remove_obsolete_adguard_widgets(child)
+
+    def _load_aiostreams_template(self) -> bool:
+        if self.aiostreams_template_text:
+            return True
+        try:
+            remote_dir = self.session.resolve(self.var("REMOTE_DIR").get())
+            remote_path = posixpath.join(
+                remote_dir, "data", "aiostreams", "runtime-template.json"
+            )
+            text = self.session.read_text(remote_path)
+            # Never offer an incomplete renderer result to the user.
+            if not text.strip().startswith("{") or "CHANGE_ME_" in text:
+                return False
+            self.aiostreams_template_text = text
+            return True
+        except Exception:
+            return False
+
+    def save_aiostreams_template(self) -> None:
+        if not self._load_aiostreams_template():
+            messagebox.showerror(
+                "Template non disponibile",
+                "Il template runtime AIOStreams non e' stato trovato o contiene placeholder non risolti.",
+            )
+            return
+        path = filedialog.asksaveasfilename(
+            title="Salva template AIOStreams",
+            defaultextension=".json",
+            initialfile="aiostreams-runtime-template.json",
+            filetypes=[("JSON", "*.json"), ("Tutti i file", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(self.aiostreams_template_text)
+        except OSError as exc:
+            messagebox.showerror("Errore salvataggio", str(exc))
+            return
+        messagebox.showinfo(
+            "Template salvato",
+            "JSON salvato. In AIOStreams usa Save & Install → Backups → Import.\n\n"
+            "Il file contiene credenziali generate per questa installazione: non pubblicarlo e non committarlo.",
+        )
 
     def build_complete(self) -> None:
         if self.demo_enabled():
@@ -167,13 +217,44 @@ class Wizard(current.Wizard):
             body,
             text=(
                 "Il test automatico certifica infrastruttura, DNS/TLS, reverse proxy e raggiungibilita' dei servizi. "
-                "Restano manuali solo gli stati applicativi personali: indexer/account Jackett e import/configurazione runtime AIOStreams."
+                "Resta manuale solo lo stato applicativo che non puo' essere inventato: per esempio gli indexer/account Jackett."
             ),
             text_color="#8294AE",
             anchor="w",
             justify="left",
             wraplength=980,
         ).grid(row=2 + total, column=0, columnspan=4, sticky="ew", padx=18, pady=(10, 16))
+
+        template_ready = self._load_aiostreams_template()
+        template_card = self.card(
+            page,
+            "Template AIOStreams della tua installazione",
+            (
+                "Il setup ha renderizzato il template sanitizzato usando solo i valori della nuova installazione. "
+                "Salvalo su Windows e importalo da AIOStreams → Save & Install → Backups → Import."
+                if template_ready
+                else
+                "Il template runtime non e' disponibile. Controlla il log di setup prima di procedere con AIOStreams."
+            ),
+        )
+        ctk.CTkButton(
+            template_card,
+            text="Salva JSON per import AIOStreams",
+            fg_color=self.ACCENT,
+            state="normal" if template_ready else "disabled",
+            command=self.save_aiostreams_template,
+        ).grid(row=0, column=0, sticky="w", pady=(2, 8))
+        ctk.CTkLabel(
+            template_card,
+            text=(
+                "ATTENZIONE: il file generato locale contiene le credenziali/URL della nuova installazione. "
+                "E' gitignored sul server e viene creato mode 0600; non va pubblicato o condiviso."
+            ),
+            text_color="#E7B75B",
+            anchor="w",
+            justify="left",
+            wraplength=920,
+        ).grid(row=1, column=0, sticky="w", pady=(0, 4))
 
 
 if __name__ == "__main__":
