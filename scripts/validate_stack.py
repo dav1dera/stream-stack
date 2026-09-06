@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
+import gzip
+import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE = ROOT / "docker-compose.yml"
+AIO_TEMPLATE_PACKED = ROOT / "data" / "aiostreams" / "runtime-template.json.gz.b64"
 
 EXPECTED_SERVICES = {
     "tailscale", "portainer", "dnscrypt-proxy", "headscale",
@@ -21,9 +26,11 @@ REQUIRED_FILES = {
     "setup.sh", "setup.env.example", "docker-compose.override.yml",
     "scripts/bootstrap.sh", "scripts/configure.py", "scripts/current_defaults.py",
     "scripts/npm_apply.py", "scripts/npm_current.py", "scripts/acceptance.py",
+    "scripts/render_aiostreams_template.py",
     "data/easyproxy/.env.example", "data/easyproxy/data/config.json.example",
     "data/tvvoo/.env.example", "data/aiomanager/.env.example",
-    "data/aiostreams/.env.example", "data/comet/.env.example",
+    "data/aiostreams/.env.example", "data/aiostreams/runtime-template.json.gz.b64",
+    "data/comet/.env.example",
     "data/pgbouncer/data/pgbouncer.ini", "data/pgbouncer/data/userlist.txt.example",
     "data/postgres/postgresql.conf", "data/postgres/init/01-databases.sql",
     "windows-wizard/Start-Wizard.cmd", "windows-wizard/run.ps1",
@@ -78,6 +85,11 @@ REQUIRED_SNIPPETS = {
         "ACCEPTANCE OK", "docker compose", "https_check", "HEADSCALE_HOST",
         "PUBLIC_READY_TIMEOUT",
     ],
+    "scripts/render_aiostreams_template.py": [
+        "runtime-template.json.gz.b64", "runtime-template.json",
+        "CHANGE_ME_STREAMVIX_MANIFEST_URL", "CHANGE_ME_TVVOO_MANIFEST_URL",
+        "mediaFlowProxyPassword",
+    ],
     "windows-wizard/launcher.py": [
         "STRICT_ACCEPTANCE", "ROUTER_PORTS_READY", "scripts/acceptance.py",
         "Acceptance test end-to-end",
@@ -89,6 +101,12 @@ REQUIRED_SNIPPETS = {
 FORBIDDEN = (
     "self-" + "stremiopi.org",
     "192.168." + "178.11",
+)
+
+JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b")
+PRIVATE_IP_RE = re.compile(
+    r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|"
+    r"172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b"
 )
 
 
@@ -106,6 +124,98 @@ def service_names(text: str) -> set[str]:
             if match:
                 names.add(match.group(1))
     return names
+
+
+def iter_strings(value: Any):
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from iter_strings(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from iter_strings(child)
+    elif isinstance(value, str):
+        yield value
+
+
+def validate_aiostreams_template(problems: list[str]) -> None:
+    if not AIO_TEMPLATE_PACKED.exists():
+        return
+    try:
+        packed = base64.b64decode("".join(AIO_TEMPLATE_PACKED.read_text(encoding="ascii").split()))
+        raw = gzip.decompress(packed).decode("utf-8")
+        obj = json.loads(raw)
+    except Exception as exc:
+        problems.append(f"AIOStreams template sanitizzato non decodificabile: {exc}")
+        return
+
+    if not isinstance(obj, dict):
+        problems.append("AIOStreams template: root JSON non e' un oggetto")
+        return
+
+    variants = obj.get("variants")
+    if not isinstance(variants, list) or not variants:
+        problems.append("AIOStreams template: variants mancanti")
+    else:
+        for index, variant in enumerate(variants, 1):
+            expected = f"profile-{index:02d}"
+            if variant.get("id") != expected or variant.get("name") != expected:
+                problems.append(f"AIOStreams template: variant {index} non anonimizzata come {expected}")
+            script = str(variant.get("script", ""))
+            if 'set proxy.credentials = "CHANGE_ME_AIO_USER:CHANGE_ME_AIO_PASSWORD"' not in script:
+                problems.append(f"AIOStreams template: variant {expected} non usa credenziali placeholder")
+            if re.search(r'set proxy\.credentials = "(?!CHANGE_ME_AIO_USER:CHANGE_ME_AIO_PASSWORD)[^"]+"', script):
+                problems.append(f"AIOStreams template: credenziale proxy reale nella variant {expected}")
+
+    if "trusted" in obj:
+        problems.append("AIOStreams template: il flag trusted non deve essere pubblicato")
+    if (obj.get("linkedAccounts") or {}).get("pushBehaviour") != "ask":
+        problems.append("AIOStreams template: linkedAccounts.pushBehaviour deve essere ask")
+
+    presets = obj.get("presets") or []
+    try:
+        if presets[9]["options"]["manifestUrl"] != "CHANGE_ME_STREAMVIX_MANIFEST_URL":
+            problems.append("AIOStreams template: StreamViX manifest non sanitizzato")
+        if presets[10]["options"]["manifestUrl"] != "CHANGE_ME_TVVOO_MANIFEST_URL":
+            problems.append("AIOStreams template: TvVoo manifest non sanitizzato")
+    except Exception:
+        problems.append("AIOStreams template: preset StreamViX/TvVoo inattesi o mancanti")
+
+    placeholders = set(re.findall(r"CHANGE_ME_[A-Z0-9_]+", raw))
+    expected_placeholders = {
+        "CHANGE_ME_AIO_USER",
+        "CHANGE_ME_AIO_PASSWORD",
+        "CHANGE_ME_TMDB_API_KEY",
+        "CHANGE_ME_TMDB_ACCESS_TOKEN",
+        "CHANGE_ME_STREAMVIX_MANIFEST_URL",
+        "CHANGE_ME_TVVOO_MANIFEST_URL",
+    }
+    if placeholders != expected_placeholders:
+        problems.append(
+            "AIOStreams template: placeholder inattesi/mancanti: "
+            + ", ".join(sorted(placeholders ^ expected_placeholders))
+        )
+
+    for forbidden in FORBIDDEN:
+        if forbidden in raw:
+            problems.append(f"AIOStreams template: riferimento privato hardcoded: {forbidden}")
+    if JWT_RE.search(raw):
+        problems.append("AIOStreams template: possibile JWT/token reale rilevato")
+    if PRIVATE_IP_RE.search(raw):
+        problems.append("AIOStreams template: IP RFC1918 hardcoded rilevato")
+
+    # User/service credential dictionaries in the public source must stay empty.
+    def check_credentials(value: Any, path: str = "$") -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = f"{path}.{key}"
+                if key == "credentials" and isinstance(child, dict) and child:
+                    problems.append(f"AIOStreams template: credentials non vuote in {child_path}")
+                check_credentials(child, child_path)
+        elif isinstance(value, list):
+            for i, child in enumerate(value):
+                check_credentials(child, f"{path}[{i}]")
+
+    check_credentials(obj)
 
 
 def main() -> int:
@@ -136,6 +246,8 @@ def main() -> int:
             if snippet not in text:
                 problems.append(f"{rel}: manca `{snippet}`")
 
+    validate_aiostreams_template(problems)
+
     scan_paths = [ROOT / "README.md", ROOT / "setup.env.example", ROOT / "scripts", ROOT / "windows-wizard"]
     for base in scan_paths:
         paths = [base] if base.is_file() else list(base.rglob("*")) if base.exists() else []
@@ -159,6 +271,7 @@ def main() -> int:
     print("VALIDAZIONE OK")
     print("- 31 servizi attesi presenti")
     print("- template strutturali presenti")
+    print("- template runtime AIOStreams anonimizzato e secret-scan OK")
     print("- tuning Comet/PostgreSQL/PgBouncer allineato")
     print("- MicroWARP configurato per SOCKS interno senza auth")
     print("- readiness one-click: wait DNS + strict acceptance presenti")
