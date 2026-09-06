@@ -36,6 +36,7 @@ setup.env
 **/config.json
 !**/config.toml.example
 !**/config.json.example
+/data/aiostreams/runtime-template.json
 
 # NPM desired state generated from setup.env
 /data/npm/stream-stack-hosts.json
