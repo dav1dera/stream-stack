@@ -35,6 +35,8 @@ La repository non copia database, token, certificati o stato personale. Ricrea i
 - Headscale / Tailscale / Headplane / OAuth2 Proxy;
 - chiavi runtime Headscale e Jackett quando possibile;
 - tuning corrente di Comet/PostgreSQL/PgBouncer;
+- template AIOStreams di riferimento anonimizzato e secret-scanned;
+- rendering locale del template AIOStreams con i valori della nuova installazione;
 - test finali di readiness.
 
 Il risultato è pensato per essere il più vicino possibile a:
@@ -45,6 +47,8 @@ prepara router + credenziali
 StreamStackSetupWizard.exe
         ↓
 Installa
+        ↓
+render config + template AIOStreams
         ↓
 attesa automatica DNS / SSL / container
         ↓
@@ -475,15 +479,60 @@ Il wizard genera localmente, senza committarli:
 - Headplane secret;
 - OAuth2 cookie secret;
 - Seanime passwords;
-- NPM admin password quando necessario.
+- NPM admin password quando necessario;
+- `data/aiostreams/runtime-template.json`, cioè la configurazione AIOStreams di riferimento renderizzata per la nuova installazione.
 
-`setup.env` viene scritto sul server con mode `0600` ed è ignorato da Git.
+`setup.env` e il template runtime AIOStreams vengono scritti sul server con mode `0600` e sono ignorati da Git.
+
+---
+
+# Template AIOStreams sanitizzato
+
+La repository include una baseline AIOStreams derivata dalla configurazione di riferimento, ma **non pubblica il backup live**.
+
+Il payload tracked:
+
+```text
+data/aiostreams/runtime-template.json.gz.b64
+```
+
+contiene solo la versione anonimizzata/sanitizzata. In particolare:
+
+- profili/variant rinominati `profile-01`, `profile-02`, ...;
+- credenziali AIOStreams nei variant sostituite da placeholder;
+- TMDB API key/access token sostituiti da placeholder;
+- URL StreamViX/TvVoo che possono incorporare credenziali sostituiti da placeholder;
+- `credentials` service vuote;
+- flag `trusted` rimosso;
+- linked-account push impostato su `ask`.
+
+Durante `./setup.sh`, `scripts/render_aiostreams_template.py` inserisce esclusivamente i valori della **nuova** installazione e crea:
+
+```text
+data/aiostreams/runtime-template.json
+```
+
+Questo secondo file contiene segreti locali: è `0600`, gitignored e **non deve essere pubblicato**.
+
+Nel Windows Wizard, a fine installazione, compare:
+
+```text
+Salva JSON per import AIOStreams
+```
+
+Poi importa il file da:
+
+```text
+AIOStreams → Save & Install → Backups → Import
+```
+
+Dettagli e modello di sanitizzazione: [`docs/AIOSTREAMS-TEMPLATE.md`](docs/AIOSTREAMS-TEMPLATE.md).
 
 ---
 
 # Cosa resta manuale dopo ACCEPTANCE OK
 
-L'infrastruttura è pronta, ma alcuni **stati applicativi personali** non vengono inventati dal wizard.
+L'infrastruttura è pronta e il template AIOStreams della nuova installazione è già generato. Restano solo gli **stati applicativi personali** che il wizard non può inventare in sicurezza.
 
 ### Jackett
 
@@ -497,7 +546,7 @@ e aggiungi gli indexer/account che vuoi usare.
 
 ### AIOStreams
 
-Importa il tuo backup/config JSON sanitizzato e aggiungi le credenziali private di provider/indexer/Usenet/debrid che non devono essere pubblicate nella repo.
+Salva il JSON già generato dal pulsante del wizard e importalo da **Save & Install → Backups → Import**. Devi aggiungere manualmente soltanto eventuali credenziali private provider/indexer/Usenet/debrid che non fanno parte della baseline pubblica o che sono volutamente operator-specific.
 
 ### Seanime / Portainer
 
@@ -529,6 +578,14 @@ python3 scripts/acceptance.py --timeout 600
 ```
 
 Nota: la conferma grafica delle porte router appartiene al wizard Windows. In CLI devi assicurarti manualmente che TCP 80/443 siano già inoltrate.
+
+Il setup CLI genera comunque:
+
+```text
+data/aiostreams/runtime-template.json
+```
+
+che puoi importare manualmente in AIOStreams.
 
 ---
 
@@ -571,6 +628,8 @@ GitHub Actions controlla automaticamente:
 - template richiesti;
 - tuning atteso;
 - plumbing Strict Acceptance;
+- decodifica e secret-scan del template AIOStreams tracked;
+- anonimizzazione dei variant e assenza di credential dictionary non vuoti;
 - Docker Compose;
 - build del Windows Setup Wizard.
 
@@ -579,12 +638,14 @@ GitHub Actions controlla automaticamente:
 # Sicurezza
 
 - nessuna password/token privata della repo sorgente viene copiata;
+- il template AIOStreams tracked è anonimizzato e controllato dal validator;
 - `setup.env` è gitignored e `0600`;
+- `data/aiostreams/runtime-template.json` è gitignored e `0600` perché contiene i valori locali renderizzati;
 - i secret vengono generati localmente;
 - i servizi LAN-only sono limitati alla subnet configurata;
 - MicroWARP no-auth resta interno alla rete Docker;
 - database e stato applicativo privato non vengono pubblicati;
-- il validator cerca riferimenti hardcoded noti prima delle build.
+- il validator cerca riferimenti hardcoded noti, JWT-like token, IP RFC1918 e credential dictionary non vuoti nel template prima delle build.
 
 > [!WARNING]
-> Prima di pubblicare nuovi file provenienti da un deployment privato, verifica sempre che non contengano token, password, email private, certificati, database o stato applicativo sensibile.
+> Prima di pubblicare nuovi file provenienti da un deployment privato, verifica sempre che non contengano token, password, email private, certificati, database o stato applicativo sensibile. Un export con "Exclude Credentials" non è automaticamente sicuro: script e URL codificati possono ancora incorporare segreti.
