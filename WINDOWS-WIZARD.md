@@ -33,7 +33,25 @@ the wizard waits for public DNS, obtains HTTPS, starts the full Compose profile 
 
 The final page also probes published LAN ports from the Windows PC and shows `OK/KO`, the local address and an **Apri** button for each main web service.
 
-AdGuard Home is outside this Compose; LAN DNS is expected to be provided by a separate resolver/AdGuard instance. Private application state such as Jackett indexers and the AIOStreams runtime backup remains operator-specific.
+## AIOStreams reference configuration
+
+The repository now includes a sanitized AIOStreams reference template. `setup.sh` renders a local copy using the credentials/domains generated for the new installation:
+
+```text
+data/aiostreams/runtime-template.json
+```
+
+The Windows completion page exposes:
+
+```text
+Salva JSON per import AIOStreams
+```
+
+Use that file from **AIOStreams -> Save & Install -> Backups -> Import**.
+
+The tracked template itself contains no live credentials. The rendered JSON does contain values for the new installation, so it is created mode `0600`, is gitignored, and must not be published or shared. See [`docs/AIOSTREAMS-TEMPLATE.md`](docs/AIOSTREAMS-TEMPLATE.md) for the sanitization and validation model.
+
+AdGuard Home is outside this Compose; LAN DNS is expected to be provided by a separate resolver/AdGuard instance. Private application state that cannot be safely fabricated, especially Jackett indexers/accounts and external provider/indexer/Usenet credentials, remains operator-specific.
 
 For a standalone executable:
 
