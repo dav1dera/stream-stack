@@ -49,12 +49,19 @@ if [[ -f "$ROOT/setup.env" ]]; then
   esac
 fi
 
+render_aiostreams_template() {
+  echo
+  echo "Rendering template runtime AIOStreams sanitizzato..."
+  python3 "$ROOT/scripts/render_aiostreams_template.py"
+}
+
 if (( NO_NPM )); then
   python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}" | sed \
     -e '/  2\. Complete the AdGuard first-run wizard\./d' \
     -e 's/  3\. Add your Jackett indexers\./  2. Add your Jackett indexers./' \
-    -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import your sanitized AIOStreams JSON configuration./' \
+    -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import the generated data\/aiostreams\/runtime-template.json in AIOStreams./' \
     -e 's/  5\. Run: docker compose --profile all up -d/  4. Run: docker compose --profile all up -d/'
+  render_aiostreams_template
   echo
   echo "Automazione Nginx Proxy Manager saltata."
   echo "Consulta docs/NPM.md per l'equivalente manuale."
@@ -65,8 +72,10 @@ python3 "$ROOT/scripts/configure.py" "${CORE_ARGS[@]}" | sed \
   -e 's#  1\. Configure Nginx Proxy Manager / certificates using docs/NPM.md\.#  1. Nginx Proxy Manager / certificates will be configured automatically next.#' \
   -e '/  2\. Complete the AdGuard first-run wizard\./d' \
   -e 's/  3\. Add your Jackett indexers\./  2. Add your Jackett indexers./' \
-  -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import your sanitized AIOStreams JSON configuration./' \
+  -e 's/  4\. Import your sanitized AIOStreams JSON configuration\./  3. Import the generated data\/aiostreams\/runtime-template.json in AIOStreams./' \
   -e 's/  5\. Run: docker compose --profile all up -d/  4. Run: docker compose --profile all up -d/'
+
+render_aiostreams_template
 
 echo
 echo "Applicazione configurazione Nginx Proxy Manager..."
@@ -74,4 +83,5 @@ python3 "$ROOT/scripts/npm_current.py"
 
 echo
 echo "Configurazione one-shot completata."
-echo "Restano gli stati applicativi: indexer Jackett e import JSON sanitizzato AIOStreams."
+echo "Template AIOStreams pronto: data/aiostreams/runtime-template.json"
+echo "Restano gli stati applicativi: indexer Jackett e import del template AIOStreams generato."
